@@ -6,6 +6,7 @@ import {
   QueueItem,
   RoomCustomization,
   RoomStateSnapshot,
+  ScreenShareState,
   SeatState,
   VideoSourceType,
   VideoState,
@@ -77,6 +78,11 @@ export interface ClientToServerEvents {
   'webrtc:answer': (payload: WebRTCSignalPayload) => void;
   'webrtc:ice': (payload: WebRTCSignalPayload) => void;
   'voice:pcm': (payload: VoicePcmPayload) => void;
+  'screenshare:start': (ack?: (res: { ok: boolean; error?: string }) => void) => void;
+  'screenshare:stop': () => void;
+  'screenshare:offer': (payload: WebRTCSignalPayload) => void;
+  'screenshare:answer': (payload: WebRTCSignalPayload) => void;
+  'screenshare:ice': (payload: WebRTCSignalPayload) => void;
   'video:control': (payload: VideoControlPayload, ack?: (res: { ok: boolean; error?: string }) => void) => void;
   'queue:add': (
     payload: Omit<QueueItem, 'id' | 'addedBy' | 'addedByName' | 'addedAt'>,
@@ -123,6 +129,10 @@ export interface ServerToClientEvents {
   'webrtc:answer': (payload: WebRTCSignalPayload) => void;
   'webrtc:ice': (payload: WebRTCSignalPayload) => void;
   'voice:pcm': (payload: VoicePcmPayload) => void;
+  'screenshare:state': (state: ScreenShareState) => void;
+  'screenshare:offer': (payload: WebRTCSignalPayload) => void;
+  'screenshare:answer': (payload: WebRTCSignalPayload) => void;
+  'screenshare:ice': (payload: WebRTCSignalPayload) => void;
   'video:synced': (video: VideoState) => void;
   'queue:synced': (queue: QueueItem[]) => void;
   'room:customized': (payload: { customization: RoomCustomization; seats: SeatState[] }) => void;

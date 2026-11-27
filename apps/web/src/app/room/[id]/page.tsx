@@ -32,6 +32,7 @@ import {
   Mic,
   MicOff,
   Minimize,
+  MonitorUp,
   MousePointerClick,
   Paintbrush,
   Pause,
@@ -55,6 +56,7 @@ import { TheaterVideoOverlay } from '@/components/room/TheaterVideoOverlay';
 import { Lite2DRoomView } from '@/components/room/Lite2DRoomView';
 import { SpatialVoiceEngine } from '@/lib/audio/SpatialVoiceEngine';
 import { AmbientMusicEngine } from '@/lib/audio/AmbientMusicEngine';
+import { ScreenShareEngine } from '@/lib/video/ScreenShareEngine';
 
 const RoomCanvasScene = dynamic(
   () => import('@/components/room/RoomCanvasScene').then((m) => m.RoomCanvasScene),
@@ -105,6 +107,8 @@ export default function RoomPage() {
   const playersMap = useLumaStore((s) => s.players);
   const seats = useLumaStore((s) => s.seats);
   const video = useLumaStore((s) => s.video);
+  const screenShare = useLumaStore((s) => s.screenShare);
+  const screenShareStream = useLumaStore((s) => s.screenShareStream);
   const queue = useLumaStore((s) => s.queue);
   const chatHistory = useLumaStore((s) => s.chatHistory);
   const micEnabled = useLumaStore((s) => s.micEnabled);
@@ -120,6 +124,8 @@ export default function RoomPage() {
   const updatePeerVoiceState = useLumaStore((s) => s.updatePeerVoiceState);
   const setSeats = useLumaStore((s) => s.setSeats);
   const setVideo = useLumaStore((s) => s.setVideo);
+  const setScreenShare = useLumaStore((s) => s.setScreenShare);
+  const setScreenShareStream = useLumaStore((s) => s.setScreenShareStream);
   const setQueue = useLumaStore((s) => s.setQueue);
   const setCustomization = useLumaStore((s) => s.setCustomization);
   const addChatMessage = useLumaStore((s) => s.addChatMessage);
@@ -151,6 +157,7 @@ export default function RoomPage() {
 
   const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const voiceEngineRef = useRef<SpatialVoiceEngine | null>(null);
+  const screenShareEngineRef = useRef<ScreenShareEngine | null>(null);
   const ambientEngineRef = useRef<AmbientMusicEngine | null>(null);
   const hudTimeoutRef = useRef<number | null>(null);
   const mobileInputRef = useRef<MobileInputState>({ moveX: 0, moveY: 0, run: false });
@@ -305,6 +312,23 @@ export default function RoomPage() {
             }
           }
           voiceEngineRef.current.syncPeers(ack.snapshot.players.map((p) => p.id));
+
+          if (
+            screenShareEngineRef.current &&
+            screenShareEngineRef.current.getLocalPlayerId() !== ack.playerId
+          ) {
+            screenShareEngineRef.current.destroy();
+            screenShareEngineRef.current = null;
+          }
+          if (!screenShareEngineRef.current) {
+            screenShareEngineRef.current = new ScreenShareEngine({
+              socket,
+              localPlayerId: ack.playerId,
+              onRemoteStream: (stream) => setScreenShareStream(stream),
+              onStopped: () => setScreenShareStream(null),
+            });
+          }
+          screenShareEngineRef.current.syncViewers(ack.snapshot.players.map((p) => p.id));
         },
       );
     };
@@ -317,14 +341,18 @@ export default function RoomPage() {
 
     socket.on('player:joined', (p) => {
       upsertPlayer(p);
-      voiceEngineRef.current?.syncPeers(Object.keys(useLumaStore.getState().players));
+      const allIds = Object.keys(useLumaStore.getState().players);
+      voiceEngineRef.current?.syncPeers(allIds);
+      screenShareEngineRef.current?.syncViewers(allIds);
       showNotice(`${p.displayName} odaya katıldı.`);
     });
 
     socket.on('player:left', ({ playerId }) => {
       const leaving = useLumaStore.getState().players[playerId];
       removePlayer(playerId);
-      voiceEngineRef.current?.syncPeers(Object.keys(useLumaStore.getState().players));
+      const allIds = Object.keys(useLumaStore.getState().players);
+      voiceEngineRef.current?.syncPeers(allIds);
+      screenShareEngineRef.current?.syncViewers(allIds);
       if (leaving) showNotice(`${leaving.displayName} odadan ayrıldı.`);
     });
 
@@ -344,6 +372,22 @@ export default function RoomPage() {
     });
     socket.on('voice:pcm', (payload) => {
       voiceEngineRef.current?.handleIncomingPcm(payload);
+    });
+    socket.on('screenshare:state', (st) => {
+      setScreenShare(st);
+      if (!st.active) {
+        screenShareEngineRef.current?.closeIncoming();
+        setScreenShareStream(null);
+      }
+    });
+    socket.on('screenshare:offer', (payload) => {
+      screenShareEngineRef.current?.handleSignal('offer', payload);
+    });
+    socket.on('screenshare:answer', (payload) => {
+      screenShareEngineRef.current?.handleSignal('answer', payload);
+    });
+    socket.on('screenshare:ice', (payload) => {
+      screenShareEngineRef.current?.handleSignal('ice', payload);
     });
 
     socket.on('video:synced', setVideo);
@@ -375,6 +419,8 @@ export default function RoomPage() {
       socketRef.current = null;
       voiceEngineRef.current?.destroy();
       voiceEngineRef.current = null;
+      screenShareEngineRef.current?.destroy();
+      screenShareEngineRef.current = null;
       ambient.stop();
       ambientEngineRef.current = null;
       resetRoomState();
@@ -608,6 +654,38 @@ export default function RoomPage() {
     });
   };
 
+  const isLocalScreenSharer = Boolean(
+    localPlayerId && screenShare.active && screenShare.sharerId === localPlayerId,
+  );
+
+  const handleToggleScreenShare = async () => {
+    const engine = screenShareEngineRef.current;
+    const sock = socketRef.current;
+    if (!engine || !sock) return;
+
+    if (engine.isSharing() || isLocalScreenSharer) {
+      engine.stopSharing();
+      setScreenShareStream(null);
+      return;
+    }
+
+    const viewerIds = Object.keys(useLumaStore.getState().players);
+    sock.emit('screenshare:start', async (res) => {
+      if (!res?.ok) {
+        showNotice(res?.error || 'Sekme/ekran paylaşımı başlatılamadı.');
+        return;
+      }
+      const stream = await engine.startSharing(viewerIds);
+      if (!stream) {
+        sock.emit('screenshare:stop');
+        showNotice('Ekran veya sekme seçimi iptal edildi.');
+        return;
+      }
+      setScreenShareStream(stream);
+      showNotice('Sekme/ekran yayını 3D perdeye aktarıldı!');
+    });
+  };
+
   return (
     <div
       onMouseMove={bumpHud}
@@ -640,6 +718,8 @@ export default function RoomPage() {
           screenVolume={screenVolume}
           interactiveScreen={interactiveScreen}
           suspended={theaterMode}
+          screenShareStream={screenShareStream}
+          isLocalScreenSharer={isLocalScreenSharer}
           canControlVideo={canControlVideo}
           inputLocked={drawer !== 'none' || theaterMode}
           mobileInputRef={mobileInputRef}
@@ -1084,6 +1164,21 @@ export default function RoomPage() {
                 <span>Normal İzle</span>
               </button>
             </>
+          ) : screenShareStream ? (
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2.5 py-1 text-[11px] font-medium text-emerald-300">
+                <MonitorUp className="h-3.5 w-3.5" />
+                {screenShare.sharerName ? `${screenShare.sharerName} Yayında` : 'Sekme Yayını'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setTheaterMode(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
+              >
+                <Tv className="h-3.5 w-3.5" />
+                <span>Normal İzle</span>
+              </button>
+            </div>
           ) : (
             <span className="hidden text-xs text-zinc-500 sm:inline">
               WASD ile yürü · Fare ile dön · E/F ile otur
@@ -1093,6 +1188,21 @@ export default function RoomPage() {
 
         {/* Right: Drawers & Fullscreen */}
         <div className="flex items-center gap-1.5">
+          {canControlVideo && (
+            <button
+              type="button"
+              onClick={handleToggleScreenShare}
+              className={`hidden items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition md:flex ${
+                isLocalScreenSharer
+                  ? 'bg-red-500/80 text-white hover:bg-red-500'
+                  : 'bg-[#3B82F6]/20 text-blue-200 ring-1 ring-blue-500/30 hover:bg-[#3B82F6]/30'
+              }`}
+              title="Kendi tarayıcından bir sekmeyi sesle 3D perdeye yansıt"
+            >
+              <MonitorUp className="h-4 w-4" />
+              <span>{isLocalScreenSharer ? 'Yayını Durdur' : 'Sekme Paylaş'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setDrawer(drawer === 'media' ? 'none' : 'media')}
@@ -1145,6 +1255,9 @@ export default function RoomPage() {
           roomName={room?.name || roomMeta?.name || 'Luma'}
           onlineCount={players.length}
           video={video}
+          screenShareStream={screenShareStream}
+          screenShareName={screenShare.sharerName}
+          isLocalScreenSharer={isLocalScreenSharer}
           displayTime={displayTime}
           hasQueue={queue.length > 0}
           screenVolume={screenVolume}
@@ -1152,6 +1265,7 @@ export default function RoomPage() {
           localAudioLevel={localAudioLevel}
           canControlVideo={canControlVideo}
           onChangeVolume={setScreenVolume}
+          onStopScreenShare={handleToggleScreenShare}
           onTogglePlay={() =>
             emitVideoControl({
               action: video?.isPlaying ? 'pause' : 'play',
@@ -1192,6 +1306,10 @@ export default function RoomPage() {
         players={players}
         customization={customization}
         video={video}
+        screenShareActive={screenShare.active}
+        screenShareName={screenShare.sharerName}
+        isLocalScreenSharer={isLocalScreenSharer}
+        onToggleScreenShare={handleToggleScreenShare}
         queue={queue}
         chatHistory={chatHistory}
         onLoadVideo={(p) =>

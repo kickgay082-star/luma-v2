@@ -12,6 +12,7 @@ import {
   RoomCustomization,
   RoomStateSnapshot,
   RoomSummary,
+  ScreenShareState,
   SeatState,
   SpatialVoiceSettings,
   Vec3,
@@ -54,6 +55,8 @@ interface LumaStoreState {
   remoteTargets: Record<string, RemoteTargetTransform>;
   seats: SeatState[];
   video: VideoState | null;
+  screenShare: ScreenShareState;
+  screenShareStream: MediaStream | null;
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   mutedChatUserIds: string[];
@@ -101,6 +104,8 @@ interface LumaStoreState {
   }) => void;
   setSeats: (seats: SeatState[]) => void;
   setVideo: (video: VideoState) => void;
+  setScreenShare: (screenShare: ScreenShareState) => void;
+  setScreenShareStream: (stream: MediaStream | null) => void;
   setQueue: (queue: QueueItem[]) => void;
   setCustomization: (customization: RoomCustomization, seats: SeatState[]) => void;
   addChatMessage: (msg: ChatMessage) => void;
@@ -143,6 +148,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
   remoteTargets: {},
   seats: [],
   video: null,
+  screenShare: { active: false, sharerId: null, sharerName: null },
+  screenShareStream: null,
   queue: [],
   chatHistory: [],
   mutedChatUserIds: [],
@@ -205,6 +212,7 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
       remoteTargets: remoteMap,
       seats: snapshot.seats,
       video: snapshot.video,
+      screenShare: snapshot.screenShare ?? { active: false, sharerId: null, sharerName: null },
       queue: snapshot.queue,
       chatHistory: snapshot.chatHistory,
       mutedChatUserIds: snapshot.mutedChatUserIds,
@@ -221,6 +229,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
       remoteTargets: {},
       seats: [],
       video: null,
+      screenShare: { active: false, sharerId: null, sharerName: null },
+      screenShareStream: null,
       queue: [],
       chatHistory: [],
       micEnabled: false,
@@ -304,6 +314,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
 
   setSeats: (seats) => set({ seats }),
   setVideo: (video) => set({ video }),
+  setScreenShare: (screenShare) => set({ screenShare }),
+  setScreenShareStream: (screenShareStream) => set({ screenShareStream }),
   setQueue: (queue) => set({ queue }),
   setCustomization: (customization, seats) =>
     set((s) => ({

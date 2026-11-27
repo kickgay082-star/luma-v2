@@ -19,6 +19,7 @@ import {
   RoomStateSnapshot,
   RoomSummary,
   sanitizeText,
+  ScreenShareState,
   SeatState,
   validateExternalHttpUrl,
   Vec3,
@@ -45,6 +46,7 @@ export interface ActiveRoom {
   players: Map<string, PlayerState>;
   seats: SeatState[];
   video: VideoState;
+  screenShare: ScreenShareState;
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   mutedChatUserIds: Set<string>;
@@ -98,6 +100,11 @@ export class RoomManager {
         updatedAt: Date.now(),
         updatedBy: null,
         hostOnlyControl: false,
+      },
+      screenShare: {
+        active: false,
+        sharerId: null,
+        sharerName: null,
       },
       queue: [],
       chatHistory: await loadRecentChatMessages(persisted.summary.id, 60),
@@ -246,6 +253,7 @@ export class RoomManager {
     room: ActiveRoom;
     leftPlayer: PlayerState;
     seatsChanged: boolean;
+    screenShareStopped: boolean;
     promotedOwner?: PlayerState;
   } | null {
     const roomId = this.socketToRoom.get(socketId);
@@ -259,6 +267,11 @@ export class RoomManager {
     if (!player) return null;
 
     const seatsChanged = this.releasePlayerSeat(room, socketId);
+    let screenShareStopped = false;
+    if (room.screenShare.active && room.screenShare.sharerId === socketId) {
+      room.screenShare = { active: false, sharerId: null, sharerName: null };
+      screenShareStopped = true;
+    }
     room.players.delete(socketId);
     room.summary.onlineCount = room.players.size;
 
@@ -292,7 +305,35 @@ export class RoomManager {
       }
     }
 
-    return { room, leftPlayer: player, seatsChanged, promotedOwner };
+    return { room, leftPlayer: player, seatsChanged, screenShareStopped, promotedOwner };
+  }
+
+  startScreenShare(
+    socketId: string,
+  ): { ok: true; room: ActiveRoom; screenShare: ScreenShareState } | { ok: false; error: string } {
+    const room = this.getRoomBySocket(socketId);
+    if (!room) return { ok: false, error: 'Odada değilsiniz.' };
+    const player = room.players.get(socketId);
+    if (!player) return { ok: false, error: 'Oyuncu bulunamadı.' };
+    if (!this.canPlayerControlVideo(room, player.role, player.userId)) {
+      return { ok: false, error: 'Ekran/sekme paylaşma yetkiniz yok.' };
+    }
+    room.screenShare = {
+      active: true,
+      sharerId: socketId,
+      sharerName: player.displayName,
+    };
+    return { ok: true, room, screenShare: room.screenShare };
+  }
+
+  stopScreenShare(socketId: string): { room: ActiveRoom; screenShare: ScreenShareState } | null {
+    const room = this.getRoomBySocket(socketId);
+    if (!room || !room.screenShare.active) return null;
+    const player = room.players.get(socketId);
+    const isPrivileged = player?.role === 'owner' || player?.role === 'moderator';
+    if (room.screenShare.sharerId !== socketId && !isPrivileged) return null;
+    room.screenShare = { active: false, sharerId: null, sharerName: null };
+    return { room, screenShare: room.screenShare };
   }
 
   updatePlayerTransform(
@@ -952,6 +993,7 @@ export class RoomManager {
       players: Array.from(room.players.values()),
       seats: room.seats,
       video: this.cloneEffectiveVideo(room.video),
+      screenShare: room.screenShare,
       queue: room.queue,
       chatHistory: room.chatHistory,
       mutedChatUserIds: Array.from(room.mutedChatUserIds),

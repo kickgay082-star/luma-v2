@@ -42,6 +42,8 @@ import {
   Film,
   SkipForward,
   Ban,
+  Globe,
+  MonitorUp,
 } from 'lucide-react';
 import { useLumaStore } from '@/stores/useLumaStore';
 
@@ -54,6 +56,10 @@ interface RoomHudDrawersProps {
   players: PlayerState[];
   customization: RoomCustomization;
   video: VideoState | null;
+  screenShareActive?: boolean;
+  screenShareName?: string | null;
+  isLocalScreenSharer?: boolean;
+  onToggleScreenShare?: () => void;
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   onLoadVideo: (payload: {
@@ -105,6 +111,10 @@ export function RoomHudDrawers({
   players,
   customization,
   video,
+  screenShareActive = false,
+  screenShareName = null,
+  isLocalScreenSharer = false,
+  onToggleScreenShare,
   queue,
   chatHistory,
   onLoadVideo,
@@ -149,6 +159,10 @@ export function RoomHudDrawers({
           <MediaDrawerContent
             localPlayer={localPlayer}
             video={video}
+            screenShareActive={screenShareActive}
+            screenShareName={screenShareName}
+            isLocalScreenSharer={isLocalScreenSharer}
+            onToggleScreenShare={onToggleScreenShare}
             queue={queue}
             onLoadVideo={onLoadVideo}
             onAddQueue={onAddQueue}
@@ -192,6 +206,10 @@ export function RoomHudDrawers({
 function MediaDrawerContent({
   localPlayer,
   video,
+  screenShareActive = false,
+  screenShareName = null,
+  isLocalScreenSharer = false,
+  onToggleScreenShare,
   queue,
   onLoadVideo,
   onAddQueue,
@@ -201,6 +219,10 @@ function MediaDrawerContent({
 }: {
   localPlayer: PlayerState | null;
   video: VideoState | null;
+  screenShareActive?: boolean;
+  screenShareName?: string | null;
+  isLocalScreenSharer?: boolean;
+  onToggleScreenShare?: () => void;
   queue: QueueItem[];
   onLoadVideo: RoomHudDrawersProps['onLoadVideo'];
   onAddQueue: RoomHudDrawersProps['onAddQueue'];
@@ -211,7 +233,12 @@ function MediaDrawerContent({
   const [tab, setTab] = useState<'url' | 'queue' | 'iptv'>('url');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaTitle, setMediaTitle] = useState('');
-  const [sourceKind, setSourceKind] = useState<VideoSourceType>('youtube');
+  const [sourceKind, setSourceKind] = useState<VideoSourceType | 'web'>('youtube');
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [resolvedItems, setResolvedItems] = useState<
+    Array<{ title: string; url: string; sourceType: VideoSourceType; quality?: string }>
+  >([]);
   const [playlists, setPlaylists] = useState<IptvPlaylist[]>([]);
   const [favorites, setFavorites] = useState<IptvChannel[]>([]);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
@@ -253,11 +280,70 @@ function MediaDrawerContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const handleSubmitUrl = (mode: 'play' | 'queue') => {
+  const isTwitterOrWebUrl = (u: string) => {
+    try {
+      const parsed = new URL(u);
+      const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+      if (host === 'x.com' || host === 'twitter.com' || host === 'mobile.twitter.com') {
+        return true;
+      }
+      if (sourceKind === 'web') return true;
+      return false;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleResolveMedia = async (autoPlayFirst = false, mode: 'play' | 'queue' = 'play') => {
+    const trimmed = mediaUrl.trim();
+    if (!trimmed) return;
+    setResolving(true);
+    setResolveError(null);
+    setResolvedItems([]);
+    try {
+      const res = await fetch('/api/media/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResolveError(data.error || 'Video çözümlenemedi.');
+        return;
+      }
+      const items = data.items ?? [];
+      if (autoPlayFirst && items.length > 0) {
+        const first = items[0];
+        const payload = {
+          sourceType: first.sourceType as VideoSourceType,
+          url: first.url,
+          title: mediaTitle.trim() || first.title,
+          isLive: false,
+        };
+        if (mode === 'play') onLoadVideo(payload);
+        else onAddQueue(payload);
+        setMediaUrl('');
+        setMediaTitle('');
+        return;
+      }
+      setResolvedItems(items);
+    } catch {
+      setResolveError('Bağlantı hatası oluştu.');
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handleSubmitUrl = async (mode: 'play' | 'queue') => {
     const trimmed = mediaUrl.trim();
     if (!trimmed) return;
 
-    let detected: VideoSourceType = sourceKind;
+    if (isTwitterOrWebUrl(trimmed)) {
+      await handleResolveMedia(true, mode);
+      return;
+    }
+
+    let detected: VideoSourceType = sourceKind === 'web' ? 'mp4' : sourceKind;
     if (extractYouTubeId(trimmed)) detected = 'youtube';
     else if (trimmed.toLowerCase().includes('.m3u8')) detected = 'hls';
 
@@ -394,16 +480,20 @@ function MediaDrawerContent({
 
       {tab === 'url' && (
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {[
               { id: 'youtube' as const, label: 'YouTube' },
-              { id: 'mp4' as const, label: 'MP4 Video' },
-              { id: 'hls' as const, label: 'HLS / M3U8' },
+              { id: 'web' as const, label: 'X / Web Link' },
+              { id: 'mp4' as const, label: 'MP4' },
+              { id: 'hls' as const, label: 'M3U8' },
             ].map((k) => (
               <button
                 key={k.id}
                 type="button"
-                onClick={() => setSourceKind(k.id)}
+                onClick={() => {
+                  setSourceKind(k.id);
+                  setResolveError(null);
+                }}
                 className={`rounded-lg border py-1.5 text-xs font-medium ${
                   sourceKind === k.id
                     ? 'border-[#7C5CFF] bg-[#7C5CFF]/15 text-white'
@@ -422,7 +512,9 @@ function MediaDrawerContent({
             placeholder={
               sourceKind === 'youtube'
                 ? 'https://www.youtube.com/watch?v=...'
-                : 'https://.../video.mp4 veya stream.m3u8'
+                : sourceKind === 'web'
+                  ? 'https://x.com/.../status/... veya film sayfası linki'
+                  : 'https://.../video.mp4 veya stream.m3u8'
             }
             className="w-full rounded-xl border border-white/10 bg-[#090A0F] px-3 py-2.5 text-xs text-white placeholder:text-zinc-600 focus:border-[#7C5CFF] focus:outline-none"
           />
@@ -438,21 +530,126 @@ function MediaDrawerContent({
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
+              disabled={resolving || !canControlVideo}
               onClick={() => handleSubmitUrl('play')}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-[#7C5CFF] py-2.5 text-xs font-medium text-white hover:bg-[#6D4AF5]"
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-[#7C5CFF] py-2.5 text-xs font-medium text-white hover:bg-[#6D4AF5] disabled:opacity-50"
             >
               <Play className="h-3.5 w-3.5" />
-              <span>Şimdi Oynat</span>
+              <span>{resolving ? 'Bulunuyor...' : 'Şimdi Oynat'}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleSubmitUrl('queue')}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#151823] py-2.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.06]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Sıraya Ekle</span>
-            </button>
+            {sourceKind === 'web' ? (
+              <button
+                type="button"
+                disabled={resolving || !canControlVideo}
+                onClick={() => handleResolveMedia(false)}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#151823] py-2.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50"
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span>Videoları Tara</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={resolving || !canControlVideo}
+                onClick={() => handleSubmitUrl('queue')}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#151823] py-2.5 text-xs font-medium text-zinc-200 hover:bg-white/[0.06] disabled:opacity-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Sıraya Ekle</span>
+              </button>
+            )}
           </div>
+
+          {resolveError && (
+            <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200">
+              {resolveError}
+            </p>
+          )}
+
+          {resolvedItems.length > 0 && (
+            <div className="space-y-1.5 rounded-xl border border-white/10 bg-[#090A0F] p-2.5">
+              <p className="text-[11px] font-medium text-zinc-300">
+                Sayfada Bulunan Videolar ({resolvedItems.length})
+              </p>
+              {resolvedItems.map((item, idx) => (
+                <div
+                  key={`${item.url}-${idx}`}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-[#10121A] px-2.5 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-white">{item.title}</p>
+                    <p className="truncate text-[10px] text-zinc-400">
+                      {item.quality || item.sourceType.toUpperCase()}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onLoadVideo({
+                          sourceType: item.sourceType,
+                          url: item.url,
+                          title: mediaTitle.trim() || item.title,
+                        })
+                      }
+                      className="rounded-lg bg-[#7C5CFF] px-2.5 py-1 text-[10px] font-medium text-white"
+                    >
+                      Oynat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onAddQueue({
+                          sourceType: item.sourceType,
+                          url: item.url,
+                          title: mediaTitle.trim() || item.title,
+                        })
+                      }
+                      className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-zinc-300"
+                    >
+                      Sıra
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Watch2Gether Style Live Browser Tab / Screen Share */}
+          {onToggleScreenShare && (
+            <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                    <MonitorUp className="h-3.5 w-3.5 text-blue-400" />
+                    Tarayıcı / Sekme Yayını
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                    Film sitesini veya korumalı sayfayı kendi sekmende aç, videoya tıkla ve bu sekmeyi sesle canlı izlet.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={!canControlVideo && !isLocalScreenSharer}
+                onClick={onToggleScreenShare}
+                className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium transition ${
+                  isLocalScreenSharer
+                    ? 'bg-red-500/80 text-white hover:bg-red-500'
+                    : 'bg-[#3B82F6] text-white hover:bg-[#2563EB]'
+                } disabled:opacity-45`}
+              >
+                <MonitorUp className="h-3.5 w-3.5" />
+                <span>
+                  {isLocalScreenSharer
+                    ? 'Sekme Paylaşımını Durdur'
+                    : screenShareActive
+                      ? `Şu an ${screenShareName || 'biri'} paylaşıyor — Değiştir`
+                      : 'Sekme / Ekran Paylaş'}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

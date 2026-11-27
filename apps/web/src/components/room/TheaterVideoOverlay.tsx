@@ -32,6 +32,9 @@ interface TheaterVideoOverlayProps {
   roomName: string;
   onlineCount: number;
   video: VideoState | null;
+  screenShareStream?: MediaStream | null;
+  screenShareName?: string | null;
+  isLocalScreenSharer?: boolean;
   displayTime: number;
   hasQueue: boolean;
   screenVolume: number;
@@ -39,6 +42,7 @@ interface TheaterVideoOverlayProps {
   localAudioLevel: number;
   canControlVideo: boolean;
   onChangeVolume: (vol: number) => void;
+  onStopScreenShare?: () => void;
   onTogglePlay: () => void;
   onSeek: (targetSec: number) => void;
   onChangeRate: (rate: number) => void;
@@ -66,6 +70,9 @@ export function TheaterVideoOverlay({
   roomName,
   onlineCount,
   video,
+  screenShareStream = null,
+  screenShareName = null,
+  isLocalScreenSharer = false,
   displayTime,
   hasQueue,
   screenVolume,
@@ -73,6 +80,7 @@ export function TheaterVideoOverlay({
   localAudioLevel,
   canControlVideo,
   onChangeVolume,
+  onStopScreenShare,
   onTogglePlay,
   onSeek,
   onChangeRate,
@@ -89,6 +97,7 @@ export function TheaterVideoOverlay({
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytReadyRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const shareVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const suppressSyncUntilRef = useRef(0);
   const latestVideoRef = useRef<VideoState | null>(video);
@@ -103,12 +112,23 @@ export function TheaterVideoOverlay({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [nativeFullscreen, setNativeFullscreen] = useState(false);
 
-  const isYoutube = video?.sourceType === 'youtube' && Boolean(video.youtubeId);
+  const hasScreenShare = Boolean(screenShareStream);
+  const isYoutube = !hasScreenShare && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
   const isNativeOrHls =
+    !hasScreenShare &&
     Boolean(video?.url) &&
     (video?.sourceType === 'mp4' ||
       video?.sourceType === 'hls' ||
       video?.sourceType === 'iptv');
+
+  useEffect(() => {
+    const el = shareVideoRef.current;
+    if (!hasScreenShare || !screenShareStream || !el) return;
+    el.srcObject = screenShareStream;
+    el.muted = isLocalScreenSharer;
+    el.volume = Math.max(0, Math.min(1, screenVolume));
+    el.play().catch(() => {});
+  }, [hasScreenShare, screenShareStream, isLocalScreenSharer, screenVolume]);
 
   useEffect(() => {
     const onFsChange = () => setNativeFullscreen(Boolean(document.fullscreenElement));
@@ -423,6 +443,32 @@ export function TheaterVideoOverlay({
 
       {/* Main Video Viewport */}
       <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-black">
+        {hasScreenShare && (
+          <div className="relative flex h-full w-full items-center justify-center">
+            <video
+              ref={shareVideoRef}
+              autoPlay
+              playsInline
+              controls
+              muted={isLocalScreenSharer}
+              className="h-full w-full bg-black object-contain"
+            />
+            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-emerald-500/40 bg-black/75 px-3 py-1 text-xs font-medium text-emerald-300">
+              <Radio className="h-3.5 w-3.5 animate-pulse" />
+              <span>{screenShareName ? `${screenShareName} Canlı Yayını` : 'Canlı Sekme / Ekran Yayını'}</span>
+              {isLocalScreenSharer && onStopScreenShare && (
+                <button
+                  type="button"
+                  onClick={onStopScreenShare}
+                  className="ml-2 rounded-full bg-red-500/80 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-500"
+                >
+                  Durdur
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {isYoutube && (
           <div className="relative h-full w-full">
             <div ref={ytRef} className="h-full w-full" />
@@ -478,7 +524,7 @@ export function TheaterVideoOverlay({
           </div>
         )}
 
-        {!video?.url && (
+        {!video?.url && !hasScreenShare && (
           <div className="flex flex-col items-center justify-center p-6 text-center">
             <p className="text-base font-medium text-zinc-300">Şu an oynatılan bir video yok.</p>
             <p className="mt-1 text-xs text-zinc-500">

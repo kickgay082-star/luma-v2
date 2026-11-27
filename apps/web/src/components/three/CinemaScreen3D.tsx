@@ -22,6 +22,8 @@ interface CinemaScreen3DProps {
   screenVolume?: number;
   interactiveHtml?: boolean;
   suspended?: boolean;
+  screenShareStream?: MediaStream | null;
+  isLocalScreenSharer?: boolean;
   canControlVideo?: boolean;
   onPlayerSyncAction?: (payload: {
     action: 'play' | 'pause' | 'seek' | 'rate';
@@ -40,6 +42,8 @@ export function CinemaScreen3D({
   screenVolume = 0.8,
   interactiveHtml = false,
   suspended = false,
+  screenShareStream = null,
+  isLocalScreenSharer = false,
   canControlVideo = true,
   onPlayerSyncAction,
   onVideoEnded,
@@ -99,15 +103,41 @@ export function CinemaScreen3D({
     return tex;
   }, []);
 
+  const hasScreenShare = !suspended && Boolean(screenShareStream);
+
+  // Live Screen / Tab Share VideoTexture
+  useEffect(() => {
+    if (!hasScreenShare || !screenShareStream) return;
+    const el = document.createElement('video');
+    el.playsInline = true;
+    el.autoplay = true;
+    el.muted = isLocalScreenSharer;
+    el.volume = Math.max(0, Math.min(1, screenVolume));
+    el.srcObject = screenShareStream;
+    el.play().catch(() => {
+      el.muted = true;
+      setMutedPrompt(true);
+      el.play().catch(() => {});
+    });
+    setVideoEl(el);
+    return () => {
+      el.pause();
+      el.srcObject = null;
+      setVideoEl(null);
+    };
+  }, [hasScreenShare, screenShareStream, isLocalScreenSharer, screenVolume]);
+
   // Native/HLS video element lifecycle for MP4, HLS, IPTV
   const isNativeOrHls =
     !suspended &&
+    !hasScreenShare &&
     Boolean(video?.url) &&
     (video?.sourceType === 'mp4' ||
       video?.sourceType === 'hls' ||
       video?.sourceType === 'iptv');
 
   useEffect(() => {
+    if (hasScreenShare) return;
     setStreamError(null);
     setUseHtmlVideoFallback(false);
 
@@ -234,7 +264,8 @@ export function CinemaScreen3D({
   }, [videoEl, useHtmlVideoFallback]);
 
   // YouTube IFrame Player API Integration
-  const isYoutube = !suspended && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
+  const isYoutube =
+    !suspended && !hasScreenShare && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
 
   useEffect(() => {
     setYtError(null);

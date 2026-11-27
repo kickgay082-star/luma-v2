@@ -346,12 +346,19 @@ export interface RoomSummary {
   isFeatured?: boolean;
 }
 
+export interface ScreenShareState {
+  active: boolean;
+  sharerId: string | null;
+  sharerName: string | null;
+}
+
 export interface RoomStateSnapshot {
   room: RoomSummary;
   customization: RoomCustomization;
   players: PlayerState[];
   seats: SeatState[];
   video: VideoState;
+  screenShare: ScreenShareState;
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   mutedChatUserIds: string[];

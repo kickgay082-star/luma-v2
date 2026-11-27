@@ -32,6 +32,8 @@ interface RoomCanvasSceneProps {
   screenVolume: number;
   interactiveScreen: boolean;
   suspended?: boolean;
+  screenShareStream?: MediaStream | null;
+  isLocalScreenSharer?: boolean;
   canControlVideo?: boolean;
   inputLocked: boolean;
   mobileInputRef: MutableRefObject<MobileInputState>;
@@ -67,6 +69,8 @@ export function RoomCanvasScene({
   screenVolume,
   interactiveScreen,
   suspended = false,
+  screenShareStream = null,
+  isLocalScreenSharer = false,
   canControlVideo = true,
   inputLocked,
   mobileInputRef,
@@ -104,6 +108,8 @@ export function RoomCanvasScene({
         screenVolume={screenVolume}
         interactiveScreen={interactiveScreen}
         suspended={suspended}
+        screenShareStream={screenShareStream}
+        isLocalScreenSharer={isLocalScreenSharer}
         canControlVideo={canControlVideo}
         onPlayerSyncAction={onPlayerSyncAction}
         onClaimSeat={onClaimSeat}

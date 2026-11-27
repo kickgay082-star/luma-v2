@@ -22,6 +22,8 @@ interface RoomEnvironment3DProps {
   screenVolume: number;
   interactiveScreen: boolean;
   suspended?: boolean;
+  screenShareStream?: MediaStream | null;
+  isLocalScreenSharer?: boolean;
   canControlVideo?: boolean;
   onPlayerSyncAction?: (payload: {
     action: 'play' | 'pause' | 'seek' | 'rate';
@@ -42,6 +44,8 @@ export function RoomEnvironment3D({
   screenVolume,
   interactiveScreen,
   suspended = false,
+  screenShareStream = null,
+  isLocalScreenSharer = false,
   canControlVideo = true,
   onPlayerSyncAction,
   onClaimSeat,
@@ -268,6 +272,8 @@ export function RoomEnvironment3D({
         screenVolume={screenVolume}
         interactiveHtml={interactiveScreen}
         suspended={suspended}
+        screenShareStream={screenShareStream}
+        isLocalScreenSharer={isLocalScreenSharer}
         canControlVideo={canControlVideo}
         onPlayerSyncAction={onPlayerSyncAction}
         onVideoEnded={onVideoEnded}

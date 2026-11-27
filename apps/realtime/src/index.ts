@@ -250,6 +250,49 @@ export function createRealtimeServer(options?: {
       }
     });
 
+    socket.on('screenshare:start', (ack) => {
+      const res = roomManager.startScreenShare(socket.id);
+      if (!res.ok) {
+        ack?.({ ok: false, error: res.error });
+        return;
+      }
+      io.to(res.room.summary.id).emit('screenshare:state', res.screenShare);
+      ack?.({ ok: true });
+    });
+
+    socket.on('screenshare:stop', () => {
+      const res = roomManager.stopScreenShare(socket.id);
+      if (!res) return;
+      io.to(res.room.summary.id).emit('screenshare:state', res.screenShare);
+    });
+
+    socket.on('screenshare:offer', (payload) => {
+      const room = roomManager.getRoomBySocket(socket.id);
+      if (!room || !room.players.has(payload.targetPlayerId)) return;
+      io.to(payload.targetPlayerId).emit('screenshare:offer', {
+        ...payload,
+        fromPlayerId: socket.id,
+      });
+    });
+
+    socket.on('screenshare:answer', (payload) => {
+      const room = roomManager.getRoomBySocket(socket.id);
+      if (!room || !room.players.has(payload.targetPlayerId)) return;
+      io.to(payload.targetPlayerId).emit('screenshare:answer', {
+        ...payload,
+        fromPlayerId: socket.id,
+      });
+    });
+
+    socket.on('screenshare:ice', (payload) => {
+      const room = roomManager.getRoomBySocket(socket.id);
+      if (!room || !room.players.has(payload.targetPlayerId)) return;
+      io.to(payload.targetPlayerId).emit('screenshare:ice', {
+        ...payload,
+        fromPlayerId: socket.id,
+      });
+    });
+
     socket.on('video:control', (payload, ack) => {
       if (!rateLimiter.consume(`${socket.id}:video`, 10, 3)) {
         ack?.({ ok: false, error: 'Çok hızlı video kontrolü.' });
@@ -381,6 +424,9 @@ export function createRealtimeServer(options?: {
       });
       if (res.seatsChanged) {
         io.to(res.room.summary.id).emit('seats:synced', res.room.seats);
+      }
+      if (res.screenShareStopped) {
+        io.to(res.room.summary.id).emit('screenshare:state', res.room.screenShare);
       }
       if (res.promotedOwner) {
         io.to(res.room.summary.id).emit('player:updated', res.promotedOwner);
