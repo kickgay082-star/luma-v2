@@ -100,35 +100,83 @@ export function LocalPlayerController({
     }
   }, [localPlayer.seatedSeatId, localPlayer.position, localPlayer.rotationY]);
 
+  // Clear stuck keys when input locks, window loses focus, or player sits down
+  useEffect(() => {
+    keysRef.current = {};
+  }, [inputLocked, localPlayer.seatedSeatId]);
+
   // Keyboard bindings
   useEffect(() => {
+    const clearAllKeys = () => {
+      keysRef.current = {};
+    };
+
+    const normalizeCode = (e: KeyboardEvent): string | null => {
+      switch (e.code) {
+        case 'KeyW':
+        case 'ArrowUp':
+          return 'up';
+        case 'KeyS':
+        case 'ArrowDown':
+          return 'down';
+        case 'KeyA':
+        case 'ArrowLeft':
+          return 'left';
+        case 'KeyD':
+        case 'ArrowRight':
+          return 'right';
+        case 'ShiftLeft':
+        case 'ShiftRight':
+          return 'shift';
+        default:
+          return null;
+      }
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (inputLocked) return;
+      if (inputLocked) {
+        keysRef.current = {};
+        return;
+      }
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
-      const k = e.key.toLowerCase();
-      keysRef.current[k] = true;
+      const mapped = normalizeCode(e);
+      if (mapped) {
+        keysRef.current[mapped] = true;
+      }
 
-      if ((k === 'e' || k === 'f') && !e.repeat) {
+      const k = e.key.toLowerCase();
+      if ((k === 'e' || k === 'f' || e.code === 'KeyE' || e.code === 'KeyF') && !e.repeat) {
         const nearest = findNearestInteractableSeat(posRef.current, seats, 2.2);
         onInteractSeat(nearest?.seat ?? null);
       }
 
-      if (k === ' ' && !localPlayer.seatedSeatId && !e.repeat) {
+      if ((k === ' ' || e.code === 'Space') && !localPlayer.seatedSeatId && !e.repeat) {
         waveUntilRef.current = performance.now() + 900;
       }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
-      keysRef.current[e.key.toLowerCase()] = false;
+      const mapped = normalizeCode(e);
+      if (mapped) {
+        keysRef.current[mapped] = false;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) clearAllKeys();
     };
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', clearAllKeys);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearAllKeys);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [inputLocked, seats, localPlayer.seatedSeatId, onInteractSeat]);
 
@@ -187,10 +235,10 @@ export function LocalPlayerController({
     let inputZ = 0;
 
     if (!inputLocked && !localPlayer.seatedSeatId) {
-      if (keys['w'] || keys['arrowup']) inputZ -= 1;
-      if (keys['s'] || keys['arrowdown']) inputZ += 1;
-      if (keys['a'] || keys['arrowleft']) inputX -= 1;
-      if (keys['d'] || keys['arrowright']) inputX += 1;
+      if (keys['up']) inputZ -= 1;
+      if (keys['down']) inputZ += 1;
+      if (keys['left']) inputX -= 1;
+      if (keys['right']) inputX += 1;
 
       if (Math.abs(mobileInputRef.current.moveX) > 0.05) {
         inputX += mobileInputRef.current.moveX;

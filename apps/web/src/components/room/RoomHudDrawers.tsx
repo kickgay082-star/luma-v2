@@ -987,20 +987,30 @@ function CustomizeDrawerContent({
             <button
               key={t.id}
               type="button"
-              onClick={() =>
+              onClick={() => {
+                const defaultLayout =
+                  t.id === 'beach-house'
+                    ? 'circle'
+                    : t.id === 'modern-lounge' || t.id === 'neon-city'
+                      ? 'lounge-u'
+                      : t.id === 'luxury-home'
+                        ? 'duo-rows'
+                        : 'theater';
                 onCustomizeRoom({
                   theme: t.id as RoomThemeId,
                   lightColor: t.defaultLightColor,
                   ambientIntensity: t.defaultAmbient,
-                })
-              }
+                  seatLayout: defaultLayout,
+                });
+              }}
               className={`rounded-xl border px-2.5 py-2 text-left text-xs transition ${
                 customization.theme === t.id
                   ? 'border-[#7C5CFF] bg-[#7C5CFF]/15 text-white'
                   : 'border-white/[0.08] bg-[#090A0F] text-zinc-400 hover:text-white'
               }`}
             >
-              {t.name}
+              <span className="block font-medium">{t.name}</span>
+              <span className="text-[10px] text-zinc-500">{t.badge}</span>
             </button>
           ))}
         </div>

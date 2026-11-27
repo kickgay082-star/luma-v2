@@ -726,14 +726,15 @@ export default function RoomPage() {
             <button
               type="button"
               onClick={() => setDrawer(drawer === 'customize' ? 'none' : 'customize')}
-              className={`rounded-xl border p-2 backdrop-blur-md transition ${
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium backdrop-blur-md transition ${
                 drawer === 'customize'
                   ? 'border-[#7C5CFF] bg-[#7C5CFF] text-white'
-                  : 'border-white/10 bg-[#0B0D14]/85 text-zinc-300 hover:text-white'
+                  : 'border-white/10 bg-[#0B0D14]/85 text-zinc-200 hover:text-white'
               }`}
-              title="Oda Özelleştirme"
+              title="Mekan ve Oda Özelleştirme"
             >
-              <Paintbrush className="h-4 w-4" />
+              <Paintbrush className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Mekan</span>
             </button>
           )}
 

@@ -60,42 +60,57 @@ export function RoomEnvironment3D({
   const screenH = meta.screen.baseHeight * customization.screenScale;
 
   const shadows = graphicsQuality !== 'low';
+  const theme = customization.theme;
+  const isOpenAir = theme === 'beach-house' || theme === 'space-room' || theme === 'neon-city';
+  const hasCeiling = !isOpenAir && theme !== 'luxury-home';
 
   return (
     <group>
       <color attach="background" args={[meta.skyColor]} />
-      <fog attach="fog" args={[meta.fogColor, 16, 46]} />
+      <fog attach="fog" args={[meta.fogColor, isOpenAir ? 24 : 16, isOpenAir ? 85 : 46]} />
 
       {/* Core Lighting Rig */}
-      <ambientLight intensity={customization.ambientIntensity} color="#D8DCFF" />
+      <ambientLight intensity={customization.ambientIntensity} color={theme === 'beach-house' ? '#FFE8C8' : '#D8DCFF'} />
       <directionalLight
-        position={[6, 12, 8]}
-        intensity={0.75}
+        position={[6, 14, 8]}
+        intensity={theme === 'beach-house' ? 1.15 : theme === 'luxury-home' ? 0.95 : 0.75}
         castShadow={shadows}
         shadow-mapSize={graphicsQuality === 'high' ? [2048, 2048] : [1024, 1024]}
-        shadow-camera-left={-14}
-        shadow-camera-right={14}
-        shadow-camera-top={14}
-        shadow-camera-bottom={-14}
-        color="#E5E7EB"
+        shadow-camera-left={-16}
+        shadow-camera-right={16}
+        shadow-camera-top={16}
+        shadow-camera-bottom={-16}
+        color={theme === 'beach-house' ? '#FDE68A' : '#E5E7EB'}
       />
       <pointLight
         position={[-8, 5, 4]}
         intensity={1.3}
-        distance={22}
+        distance={24}
         color={customization.lightColor}
       />
       <pointLight
         position={[8, 5, 4]}
         intensity={1.3}
-        distance={22}
+        distance={24}
         color={customization.lightColor}
       />
 
-      {/* Main Floor */}
+      {/* Main Walkable Floor */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[roomW, roomD]} />
-        <meshStandardMaterial color={meta.floorColor} roughness={0.85} metalness={0.08} />
+        <meshStandardMaterial
+          color={
+            theme === 'beach-house'
+              ? '#7C5A3A'
+              : theme === 'luxury-home'
+                ? '#2E2836'
+                : theme === 'modern-lounge'
+                  ? '#3A2C23'
+                  : meta.floorColor
+          }
+          roughness={theme === 'luxury-home' ? 0.35 : 0.85}
+          metalness={theme === 'luxury-home' ? 0.22 : 0.08}
+        />
       </mesh>
 
       {/* Stepped Theater Risers matching server getFloorElevationAt */}
@@ -118,70 +133,84 @@ export function RoomEnvironment3D({
         </mesh>
       )}
 
-      {/* Cinema Stage Platform */}
+      {/* Cinema Stage Platform (wooden pier deck for beach, marble plinth for mansion) */}
       <mesh
         position={[0, 0.22, meta.screen.position[2] + 1.0]}
         receiveShadow
         castShadow
       >
         <boxGeometry args={[screenW + 2.2, 0.44, 2.4]} />
-        <meshStandardMaterial color="#0D0F16" roughness={0.75} metalness={0.2} />
+        <meshStandardMaterial
+          color={
+            theme === 'beach-house'
+              ? '#6A4B2E'
+              : theme === 'luxury-home'
+                ? '#3D3547'
+                : '#0D0F16'
+          }
+          roughness={theme === 'luxury-home' ? 0.3 : 0.75}
+          metalness={theme === 'luxury-home' ? 0.25 : 0.18}
+        />
       </mesh>
 
-      {/* Perimeter Walls (Left/Right/Front/Back — glass or open panorama for Space/Beach/NeonCity) */}
-      <mesh position={[0, 4.2, bounds.minZ]} receiveShadow>
-        <boxGeometry args={[roomW, 8.4, 0.35]} />
-        <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
-      </mesh>
-      <mesh position={[0, 4.2, bounds.maxZ]} receiveShadow>
-        <boxGeometry args={[roomW, 8.4, 0.35]} />
-        <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
-      </mesh>
-      <mesh position={[bounds.minX, 4.2, 0]} receiveShadow>
-        <boxGeometry args={[0.35, 8.4, roomD]} />
-        <meshStandardMaterial
-          color={meta.wallColor}
-          roughness={0.82}
-          transparent={customization.theme === 'space-room' || customization.theme === 'neon-city'}
-          opacity={customization.theme === 'space-room' || customization.theme === 'neon-city' ? 0.32 : 1}
-        />
-      </mesh>
-      <mesh position={[bounds.maxX, 4.2, 0]} receiveShadow>
-        <boxGeometry args={[0.35, 8.4, roomD]} />
-        <meshStandardMaterial
-          color={meta.wallColor}
-          roughness={0.82}
-          transparent={customization.theme === 'space-room' || customization.theme === 'neon-city'}
-          opacity={customization.theme === 'space-room' || customization.theme === 'neon-city' ? 0.32 : 1}
-        />
-      </mesh>
+      {/* Enclosed Room Walls (hidden for open-air Beach, Space, Penthouse Neon-City) */}
+      {!isOpenAir && (
+        <group>
+          <mesh position={[0, 4.2, bounds.minZ]} receiveShadow>
+            <boxGeometry args={[roomW, 8.4, 0.35]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          </mesh>
+          <mesh position={[0, 4.2, bounds.maxZ]} receiveShadow>
+            <boxGeometry args={[roomW, 8.4, 0.35]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          </mesh>
+          <mesh position={[bounds.minX, 4.2, 0]} receiveShadow>
+            <boxGeometry args={[0.35, 8.4, roomD]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          </mesh>
+          <mesh position={[bounds.maxX, 4.2, 0]} receiveShadow>
+            <boxGeometry args={[0.35, 8.4, roomD]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          </mesh>
+        </group>
+      )}
 
       {/* Ceiling */}
-      {customization.theme !== 'beach-house' && customization.theme !== 'space-room' && (
+      {hasCeiling && (
         <mesh position={[0, 8.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
           <planeGeometry args={[roomW, roomD]} />
-          <meshStandardMaterial color="#07080C" roughness={0.9} />
+          <meshStandardMaterial color={theme === 'minimalist' ? '#171920' : '#07080C'} roughness={0.9} />
         </mesh>
       )}
 
-      {/* Aisle LED Strips */}
-      <mesh position={[-7.1, 0.015, 1.5]}>
-        <boxGeometry args={[0.06, 0.015, 13]} />
-        <meshBasicMaterial color={customization.lightColor} />
-      </mesh>
-      <mesh position={[7.1, 0.015, 1.5]}>
-        <boxGeometry args={[0.06, 0.015, 13]} />
-        <meshBasicMaterial color={customization.lightColor} />
-      </mesh>
+      {/* Aisle LED Strips (indoor cinema/gaming/dark themes only) */}
+      {(theme === 'premium-cinema' ||
+        theme === 'dark-cinema' ||
+        theme === 'gaming-room' ||
+        theme === 'retro-cinema') && (
+        <group>
+          <mesh position={[-7.1, 0.015, 1.5]}>
+            <boxGeometry args={[0.06, 0.015, 13]} />
+            <meshBasicMaterial color={customization.lightColor} />
+          </mesh>
+          <mesh position={[7.1, 0.015, 1.5]}>
+            <boxGeometry args={[0.06, 0.015, 13]} />
+            <meshBasicMaterial color={customization.lightColor} />
+          </mesh>
+        </group>
+      )}
 
-      {/* Decorative Side Pillars (matches server colliders for decorPreset !== 'minimal') */}
-      {customization.decorPreset !== 'minimal' && (
+      {/* Decorative Side Pillars matching server colliders */}
+      {customization.decorPreset !== 'minimal' && !isOpenAir && (
         <group>
           {[-9.2, 9.2].map((px, i) => (
             <group key={i} position={[px, 0, -6.2]}>
               <mesh position={[0, 2.8, 0]} castShadow receiveShadow>
                 <boxGeometry args={[1.1, 5.6, 1.1]} />
-                <meshStandardMaterial color={meta.wallColor} roughness={0.7} />
+                <meshStandardMaterial
+                  color={theme === 'luxury-home' ? '#E7DFD1' : meta.wallColor}
+                  roughness={theme === 'luxury-home' ? 0.35 : 0.7}
+                />
               </mesh>
               <mesh position={[0, 2.8, 0.56]}>
                 <boxGeometry args={[0.08, 4.4, 0.04]} />
@@ -199,7 +228,10 @@ export function RoomEnvironment3D({
             <group key={i} position={[cx, 0, 6.2]}>
               <mesh position={[0, 0.45, 0]} castShadow receiveShadow>
                 <boxGeometry args={[1.5, 0.9, 1.3]} />
-                <meshStandardMaterial color="#181A24" roughness={0.6} />
+                <meshStandardMaterial
+                  color={theme === 'beach-house' ? '#704E2E' : '#181A24'}
+                  roughness={0.6}
+                />
               </mesh>
               <mesh position={[0, 1.05, 0]}>
                 <cylinderGeometry args={[0.18, 0.14, 0.35, 12]} />
@@ -214,14 +246,16 @@ export function RoomEnvironment3D({
         </group>
       )}
 
-      {/* Theme-Specific Signatures */}
+      {/* Theme-Specific Full World Architecture */}
       <ThemeSpecificBackdrop
-        theme={customization.theme}
+        theme={theme}
         lightColor={customization.lightColor}
         graphicsQuality={graphicsQuality}
         screenW={screenW}
         screenH={screenH}
         screenPos={meta.screen.position}
+        roomW={roomW}
+        roomD={roomD}
       />
 
       {/* Synchronized Cinema Screen */}
@@ -254,6 +288,31 @@ export function RoomEnvironment3D({
   );
 }
 
+function PalmTree({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      {/* Curved Segmented Trunk */}
+      <mesh position={[0, 1.6, 0]} rotation={[0.06, 0, 0.08]} castShadow>
+        <cylinderGeometry args={[0.16, 0.24, 3.2, 8]} />
+        <meshStandardMaterial color="#6B4423" roughness={0.9} />
+      </mesh>
+      <mesh position={[0.18, 4.1, 0.1]} rotation={[0.12, 0, -0.05]} castShadow>
+        <cylinderGeometry args={[0.11, 0.16, 2.4, 8]} />
+        <meshStandardMaterial color="#7C512B" roughness={0.9} />
+      </mesh>
+      {/* Palm Fronds */}
+      {[0, 1.1, 2.2, 3.3, 4.4, 5.4].map((ang, i) => (
+        <group key={i} position={[0.2, 5.2, 0.12]} rotation={[0.35, ang, 0]}>
+          <mesh position={[0, -0.15, 1.15]} rotation={[0.28, 0, 0]}>
+            <boxGeometry args={[0.42, 0.06, 2.2]} />
+            <meshStandardMaterial color={i % 2 === 0 ? '#1E6B3A' : '#268047'} roughness={0.75} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function ThemeSpecificBackdrop({
   theme,
   lightColor,
@@ -261,6 +320,8 @@ function ThemeSpecificBackdrop({
   screenW,
   screenH,
   screenPos,
+  roomW,
+  roomD,
 }: {
   theme: RoomCustomization['theme'];
   lightColor: string;
@@ -268,52 +329,276 @@ function ThemeSpecificBackdrop({
   screenW: number;
   screenH: number;
   screenPos: [number, number, number];
+  roomW: number;
+  roomD: number;
 }) {
   const starCount = graphicsQuality === 'high' ? 1800 : graphicsQuality === 'medium' ? 900 : 350;
 
-  if (theme === 'space-room') {
-    return (
-      <group>
-        <Stars radius={60} depth={40} count={starCount} factor={3.2} fade speed={0.4} />
-        <mesh position={[-22, 6, -18]}>
-          <sphereGeometry args={[5.5, 28, 24]} />
-          <meshStandardMaterial color="#1E3A5F" roughness={0.7} />
-        </mesh>
-        <mesh position={[-22, 6, -18]} rotation={[1.2, 0.3, 0]}>
-          <torusGeometry args={[8.2, 0.45, 6, 48]} />
-          <meshStandardMaterial color="#38BDF8" transparent opacity={0.4} />
-        </mesh>
-      </group>
-    );
-  }
-
+  // 1. SAHİL & PLAJ (Açık hava ahşap iskele, altın kum sahil, deniz, palmiyeler ve meşaleler)
   if (theme === 'beach-house') {
     return (
       <group>
-        <Stars radius={70} depth={30} count={Math.round(starCount * 0.6)} factor={2.4} fade />
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.35, -30]}>
-          <planeGeometry args={[120, 48]} />
-          <meshStandardMaterial color="#0A1E33" metalness={0.65} roughness={0.22} />
+        <Stars radius={85} depth={30} count={Math.round(starCount * 0.55)} factor={2.6} fade />
+        {/* Warm Sunset / Moonlit Horizon Glow */}
+        <mesh position={[0, 8, -58]}>
+          <circleGeometry args={[5.2, 32]} />
+          <meshBasicMaterial color="#FDE68A" />
         </mesh>
-        <mesh position={[16, 16, -46]}>
-          <sphereGeometry args={[2.2, 20, 20]} />
-          <meshBasicMaterial color="#E2E8F0" />
+        <pointLight position={[0, 10, -35]} intensity={1.8} distance={75} color="#FDBA74" />
+
+        {/* Surrounding Golden Sand Beach */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.12, 4]} receiveShadow>
+          <planeGeometry args={[140, 44]} />
+          <meshStandardMaterial color="#C8A26A" roughness={0.95} />
         </mesh>
+
+        {/* Deep Ocean Water Extending to Horizon */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.22, -45]}>
+          <planeGeometry args={[180, 75]} />
+          <meshStandardMaterial color="#0A4C6B" metalness={0.55} roughness={0.18} />
+        </mesh>
+        {/* Shoreline Foam Strip */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, -15.5]}>
+          <planeGeometry args={[140, 1.8]} />
+          <meshBasicMaterial color="#7DD3FC" transparent opacity={0.35} />
+        </mesh>
+
+        {/* Low Wooden Deck Railings (left, right, back) */}
+        {[-roomW / 2, roomW / 2].map((rx, idx) => (
+          <group key={idx} position={[rx, 0, 0]}>
+            <mesh position={[0, 0.85, 0]}>
+              <boxGeometry args={[0.12, 0.08, roomD]} />
+              <meshStandardMaterial color="#5C3D24" roughness={0.8} />
+            </mesh>
+            {[-10, -5, 0, 5, 10].map((pz, j) => (
+              <group key={j} position={[0, 0, pz]}>
+                <mesh position={[0, 0.55, 0]}>
+                  <boxGeometry args={[0.16, 1.1, 0.16]} />
+                  <meshStandardMaterial color="#4A301C" roughness={0.85} />
+                </mesh>
+                {/* Warm Deck Lantern */}
+                <mesh position={[0, 1.2, 0]}>
+                  <cylinderGeometry args={[0.12, 0.1, 0.24, 8]} />
+                  <meshStandardMaterial color="#F59E0B" emissive="#F59E0B" emissiveIntensity={1.2} />
+                </mesh>
+                <pointLight position={[0, 1.35, 0]} intensity={0.45} distance={7} color="#FBBF24" />
+              </group>
+            ))}
+          </group>
+        ))}
+
+        {/* Screen Wooden Support Posts */}
+        {[-screenW / 2 - 0.35, screenW / 2 + 0.35].map((px, i) => (
+          <mesh key={i} position={[px, screenPos[1] / 2, screenPos[2] - 0.2]}>
+            <cylinderGeometry args={[0.18, 0.22, screenPos[1] + 2.6, 10]} />
+            <meshStandardMaterial color="#4A301C" roughness={0.85} />
+          </mesh>
+        ))}
+
+        {/* Palm Trees Around the Beach */}
+        <PalmTree position={[-15.5, -0.1, -6]} />
+        <PalmTree position={[15.5, -0.1, -5]} />
+        <PalmTree position={[-16.5, -0.1, 7]} />
+        <PalmTree position={[16.2, -0.1, 8]} />
+        <PalmTree position={[-11, -0.1, -13.5]} />
+        <PalmTree position={[11.5, -0.1, -13.8]} />
       </group>
     );
   }
 
+  // 2. MALİKANE (Lüks Villa: mermer zemin, beyaz/altın sütunlar, kristal avize, şömine, halı)
+  if (theme === 'luxury-home') {
+    return (
+      <group>
+        {/* Grand Coffered Ceiling */}
+        <mesh position={[0, 8.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[roomW, roomD]} />
+          <meshStandardMaterial color="#1E1824" roughness={0.5} />
+        </mesh>
+
+        {/* Velvet Carpet Under Seating Area */}
+        <mesh position={[0, 0.015, 2.2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[12.8, 10.5]} />
+          <meshStandardMaterial color="#4A1D3D" roughness={0.92} />
+        </mesh>
+        <mesh position={[0, 0.018, 2.2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[5.8, 6.1, 4]} />
+          <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
+        </mesh>
+
+        {/* Grand Crystal Chandelier */}
+        <group position={[0, 7.2, 1.5]}>
+          <mesh position={[0, 0.7, 0]}>
+            <cylinderGeometry args={[0.06, 0.06, 1.4, 8]} />
+            <meshStandardMaterial color="#D4AF37" metalness={0.8} roughness={0.2} />
+          </mesh>
+          <mesh position={[0, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[1.4, 0.07, 10, 32]} />
+            <meshStandardMaterial color="#D4AF37" metalness={0.85} roughness={0.2} />
+          </mesh>
+          <mesh position={[0, -0.25, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.85, 0.05, 8, 24]} />
+            <meshStandardMaterial color="#FDE68A" emissive="#F59E0B" emissiveIntensity={1.1} />
+          </mesh>
+          <pointLight position={[0, -0.4, 0]} intensity={2.2} distance={24} color="#FDE68A" />
+        </group>
+
+        {/* Marble & Gold Columns along both sides */}
+        {[-10.4, 10.4].map((xPos, sideIdx) =>
+          [-7, -1, 5].map((zPos, i) => (
+            <group key={`${sideIdx}-${i}`} position={[xPos, 0, zPos]}>
+              <mesh position={[0, 4.1, 0]} castShadow receiveShadow>
+                <cylinderGeometry args={[0.42, 0.48, 8.2, 16]} />
+                <meshStandardMaterial color="#ECE6DC" roughness={0.28} metalness={0.08} />
+              </mesh>
+              <mesh position={[0, 0.25, 0]}>
+                <boxGeometry args={[1.2, 0.5, 1.2]} />
+                <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
+              </mesh>
+              <mesh position={[0, 7.95, 0]}>
+                <boxGeometry args={[1.2, 0.5, 1.2]} />
+                <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
+              </mesh>
+            </group>
+          )),
+        )}
+
+        {/* Glowing Villa Fireplace on Left Wall + Art Gallery Frame on Right Wall */}
+        <group position={[-10.6, 0, 2]}>
+          <mesh position={[0, 1.1, 0]} castShadow>
+            <boxGeometry args={[0.8, 2.2, 3.2]} />
+            <meshStandardMaterial color="#3A2F3D" roughness={0.4} />
+          </mesh>
+          <mesh position={[0.42, 0.65, 0]}>
+            <boxGeometry args={[0.08, 0.9, 1.6]} />
+            <meshStandardMaterial color="#F97316" emissive="#EA580C" emissiveIntensity={1.6} />
+          </mesh>
+          <pointLight position={[1.1, 0.9, 0]} intensity={1.4} distance={10} color="#FB923C" />
+        </group>
+
+        <group position={[10.65, 3.4, 2]}>
+          <mesh>
+            <boxGeometry args={[0.12, 2.6, 3.8]} />
+            <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.25} />
+          </mesh>
+          <mesh position={[-0.07, 0, 0]}>
+            <boxGeometry args={[0.04, 2.2, 3.4]} />
+            <meshStandardMaterial color="#2D1B4E" roughness={0.6} />
+          </mesh>
+        </group>
+      </group>
+    );
+  }
+
+  // 3. MODERN ODA / LOUNGE (Ev salonu: halı, sıcak lambaderler, ahşap duvar çıtaları, pencereler ve bitkiler)
+  if (theme === 'modern-lounge') {
+    return (
+      <group>
+        {/* Cozy Woven Living-Room Rug */}
+        <mesh position={[0, 0.015, 2.2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[12.5, 9.8]} />
+          <meshStandardMaterial color="#2E3240" roughness={0.95} />
+        </mesh>
+
+        {/* Warm Wood Slat Accents & Tall Loft Windows */}
+        {[-11.75, 11.75].map((xPos, side) => (
+          <group key={side}>
+            {[-4, 1.5, 7].map((zPos, j) => (
+              <group key={j} position={[xPos, 3.6, zPos]}>
+                <mesh>
+                  <boxGeometry args={[0.1, 4.4, 2.4]} />
+                  <meshStandardMaterial color="#0D192B" emissive="#1E3A5F" emissiveIntensity={0.35} />
+                </mesh>
+                <mesh position={[side === 0 ? 0.06 : -0.06, 0, 0]}>
+                  <boxGeometry args={[0.05, 4.5, 0.08]} />
+                  <meshStandardMaterial color="#4B382A" />
+                </mesh>
+              </group>
+            ))}
+          </group>
+        ))}
+
+        {/* Warm Standing Floor Lamps + Indoor Potted Plants */}
+        {[-8.2, 8.2].map((xPos, idx) => (
+          <group key={idx} position={[xPos, 0, 4.2]}>
+            <mesh position={[0, 1.2, 0]}>
+              <cylinderGeometry args={[0.04, 0.05, 2.4, 8]} />
+              <meshStandardMaterial color="#D4A373" metalness={0.5} />
+            </mesh>
+            <mesh position={[0, 2.45, 0]}>
+              <cylinderGeometry args={[0.28, 0.42, 0.45, 14]} />
+              <meshStandardMaterial color="#FEF3C7" emissive="#F59E0B" emissiveIntensity={0.85} />
+            </mesh>
+            <pointLight position={[0, 2.3, 0]} intensity={1.1} distance={10} color="#FDE68A" />
+          </group>
+        ))}
+
+        {[-9.8, 9.8].map((xPos, idx) => (
+          <group key={idx} position={[xPos, 0, -1.5]}>
+            <mesh position={[0, 0.35, 0]}>
+              <cylinderGeometry args={[0.35, 0.25, 0.7, 12]} />
+              <meshStandardMaterial color="#D6D3D1" roughness={0.7} />
+            </mesh>
+            <mesh position={[0, 1.05, 0]}>
+              <dodecahedronGeometry args={[0.55, 0]} />
+              <meshStandardMaterial color="#1F6E43" roughness={0.8} />
+            </mesh>
+          </group>
+        ))}
+      </group>
+    );
+  }
+
+  // 4. UZAY ODASI (Cam kubbe, yıldızlar ve dev halkalı gezegen)
+  if (theme === 'space-room') {
+    return (
+      <group>
+        <Stars radius={65} depth={40} count={starCount} factor={3.2} fade speed={0.4} />
+        <mesh position={[-22, 6, -18]}>
+          <sphereGeometry args={[5.8, 28, 24]} />
+          <meshStandardMaterial color="#1E3A5F" roughness={0.65} />
+        </mesh>
+        <mesh position={[-22, 6, -18]} rotation={[1.2, 0.3, 0]}>
+          <torusGeometry args={[8.5, 0.48, 6, 48]} />
+          <meshStandardMaterial color="#38BDF8" transparent opacity={0.45} />
+        </mesh>
+        <mesh position={[20, 12, -32]}>
+          <sphereGeometry args={[3.2, 24, 20]} />
+          <meshStandardMaterial color="#6D28D9" emissive="#4C1D95" emissiveIntensity={0.4} />
+        </mesh>
+        {/* Glass Observation Arch Ribs */}
+        {[-7, 0, 7].map((zPos, i) => (
+          <mesh key={i} position={[0, 4.2, zPos]} rotation={[0, Math.PI / 2, 0]}>
+            <torusGeometry args={[12.2, 0.16, 8, 32, Math.PI]} />
+            <meshStandardMaterial color="#334155" metalness={0.7} roughness={0.3} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  // 5. NEON ŞEHİR PENTHOUSE (Açık teras cam korkuluğu + gökdelenler)
   if (theme === 'neon-city') {
     const towers = [
       [-18, 8, -14, 3, 18],
       [-21, 11, -4, 4, 24],
       [-17, 7, 6, 3.2, 16],
+      [-10, 10, -22, 3.6, 22],
+      [10, 12, -23, 4.2, 26],
       [18, 9, -12, 3.5, 20],
       [21, 12, 0, 4, 26],
       [17, 7, 9, 3, 15],
     ];
     return (
       <group>
+        <Stars radius={75} depth={30} count={Math.round(starCount * 0.4)} factor={2} fade />
+        {/* Glass Terrace Railings */}
+        {[-roomW / 2, roomW / 2].map((rx, idx) => (
+          <mesh key={idx} position={[rx, 0.65, 0]}>
+            <boxGeometry args={[0.08, 1.3, roomD]} />
+            <meshStandardMaterial color="#38BDF8" transparent opacity={0.22} metalness={0.8} roughness={0.1} />
+          </mesh>
+        ))}
         {towers.map(([x, y, z, w, h], idx) => (
           <group key={idx} position={[x, y, z]}>
             <mesh>
@@ -330,23 +615,66 @@ function ThemeSpecificBackdrop({
     );
   }
 
+  // 6. RETRO SİNEMA (Kadife perdeler, bordo halı, pirinç aplikler)
   if (theme === 'retro-cinema') {
     return (
       <group>
-        {/* Velvet Curtains flanking the screen */}
+        <mesh position={[0, 0.015, 2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[12, 12]} />
+          <meshStandardMaterial color="#4A101B" roughness={0.92} />
+        </mesh>
         <mesh position={[-screenW / 2 - 1.1, screenPos[1], screenPos[2] + 0.15]}>
           <boxGeometry args={[1.6, screenH + 1.2, 0.35]} />
-          <meshStandardMaterial color="#5B1420" roughness={0.9} />
+          <meshStandardMaterial color="#681322" roughness={0.9} />
         </mesh>
         <mesh position={[screenW / 2 + 1.1, screenPos[1], screenPos[2] + 0.15]}>
           <boxGeometry args={[1.6, screenH + 1.2, 0.35]} />
-          <meshStandardMaterial color="#5B1420" roughness={0.9} />
+          <meshStandardMaterial color="#681322" roughness={0.9} />
+        </mesh>
+        {[-11.7, 11.7].map((xPos, s) =>
+          [-5, 0, 5].map((zPos, i) => (
+            <pointLight key={`${s}-${i}`} position={[xPos * 0.9, 3.6, zPos]} intensity={0.75} distance={9} color="#F59E0B" />
+          )),
+        )}
+      </group>
+    );
+  }
+
+  // 7. GAMING ROOM (RGB stüdyo masaları ve duvar ışıkları)
+  if (theme === 'gaming-room') {
+    return (
+      <group>
+        {[-10.4, 10.4].map((xPos, side) =>
+          [-3, 3].map((zPos, idx) => (
+            <group key={`${side}-${idx}`} position={[xPos, 0, zPos]}>
+              <mesh position={[0, 0.75, 0]}>
+                <boxGeometry args={[0.9, 0.08, 2.2]} />
+                <meshStandardMaterial color="#1E293B" roughness={0.4} />
+              </mesh>
+              <mesh position={[side === 0 ? -0.25 : 0.25, 1.25, 0]}>
+                <boxGeometry args={[0.06, 0.65, 1.3]} />
+                <meshStandardMaterial color="#0F172A" emissive={idx % 2 === 0 ? lightColor : '#3B82F6'} emissiveIntensity={0.8} />
+              </mesh>
+            </group>
+          )),
+        )}
+      </group>
+    );
+  }
+
+  // 8. MİNİMALİST ODA (Açık tavan ışığı & galeri duvarları)
+  if (theme === 'minimalist') {
+    return (
+      <group>
+        <mesh position={[0, 8.35, 1]} rotation={[Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[7.5, 9]} />
+          <meshBasicMaterial color="#CBD5E1" />
         </mesh>
       </group>
     );
   }
 
-  // Acoustic wall panels for cinema / gaming / lounge
+  // 9. SİNEMA SALONLARI (Akustik duvar panelleri)
   return (
     <group>
       {[-8, -4, 0, 4, 8].map((zPos, i) => (
