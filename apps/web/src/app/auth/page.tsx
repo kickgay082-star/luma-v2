@@ -66,7 +66,7 @@ export default function AuthPage() {
                 maxLength={24}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="İsmin (Örn: Taha)"
+                placeholder="Adını yaz..."
                 className="w-full rounded-xl border border-white/10 bg-[#090A0F] py-3 pl-10 pr-4 text-sm text-white placeholder-zinc-500 outline-none transition focus:border-[#7C5CFF]"
               />
             </div>

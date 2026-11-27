@@ -39,6 +39,7 @@ import {
   Radio,
   Settings,
   SkipForward,
+  Tv,
   UserPlus,
   Users,
   Volume2,
@@ -49,7 +50,8 @@ import {
 } from 'lucide-react';
 import { getEffectiveAvatar, useLumaStore } from '@/stores/useLumaStore';
 import { CameraMode, MobileInputState } from '@/components/three/PlayerControllers3D';
-import { ActiveDrawer, RoomHudDrawers } from '@/components/room/RoomHudDrawers';
+import { RoomHudDrawers, ActiveDrawer } from '@/components/room/RoomHudDrawers';
+import { TheaterVideoOverlay } from '@/components/room/TheaterVideoOverlay';
 import { Lite2DRoomView } from '@/components/room/Lite2DRoomView';
 import { SpatialVoiceEngine } from '@/lib/audio/SpatialVoiceEngine';
 import { AmbientMusicEngine } from '@/lib/audio/AmbientMusicEngine';
@@ -140,6 +142,7 @@ export default function RoomPage() {
   const [nearestSeat, setNearestSeat] = useState<SeatState | null>(null);
   const [selectedRemote, setSelectedRemote] = useState<PlayerState | null>(null);
   const [hudVisible, setHudVisible] = useState<boolean>(true);
+  const [theaterMode, setTheaterMode] = useState<boolean>(false);
   const [copiedInvite, setCopiedInvite] = useState<boolean>(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -608,7 +611,8 @@ export default function RoomPage() {
           cameraZoom={cameraZoom}
           screenVolume={screenVolume}
           interactiveScreen={interactiveScreen}
-          inputLocked={drawer !== 'none'}
+          suspended={theaterMode}
+          inputLocked={drawer !== 'none' || theaterMode}
           mobileInputRef={mobileInputRef}
           listenerTransformRef={listenerTransformRef}
           localPositionRef={localPositionRef}
@@ -989,6 +993,16 @@ export default function RoomPage() {
                   <span>Perde Kontrolü</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => setTheaterMode(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
+                title="Videoyu 3D sahne olmadan normal tam ekran modunda izle"
+              >
+                <Tv className="h-3.5 w-3.5" />
+                <span>Normal İzle</span>
+              </button>
             </>
           ) : (
             <span className="hidden text-xs text-zinc-500 sm:inline">
@@ -1044,6 +1058,43 @@ export default function RoomPage() {
           </button>
         </div>
       </footer>
+
+      {/* Normal Fullscreen Video Mode (2D Theater Overlay) */}
+      {theaterMode && (
+        <TheaterVideoOverlay
+          roomName={room?.name || roomMeta?.name || 'Luma'}
+          onlineCount={players.length}
+          video={video}
+          displayTime={displayTime}
+          hasQueue={queue.length > 0}
+          screenVolume={screenVolume}
+          micEnabled={micEnabled}
+          localAudioLevel={localAudioLevel}
+          onChangeVolume={setScreenVolume}
+          onTogglePlay={() =>
+            socketRef.current?.emit('video:control', {
+              action: video?.isPlaying ? 'pause' : 'play',
+            })
+          }
+          onSeek={(targetSec) =>
+            socketRef.current?.emit('video:control', {
+              action: 'seek',
+              currentTime: targetSec,
+            })
+          }
+          onNextQueue={() => socketRef.current?.emit('queue:next')}
+          onVideoEnded={() => socketRef.current?.emit('queue:next')}
+          onToggleMic={handleToggleMic}
+          onOpenMedia={() => setDrawer(drawer === 'media' ? 'none' : 'media')}
+          onOpenSocial={() => setDrawer(drawer === 'social' ? 'none' : 'social')}
+          onExitTheater={() => {
+            if (document.fullscreenElement) {
+              document.exitFullscreen().catch(() => {});
+            }
+            setTheaterMode(false);
+          }}
+        />
+      )}
 
       {/* Slide-Over HUD Drawers */}
       <RoomHudDrawers

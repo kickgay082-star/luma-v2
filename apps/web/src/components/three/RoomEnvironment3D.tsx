@@ -21,6 +21,7 @@ interface RoomEnvironment3DProps {
   graphicsQuality: GraphicsQuality;
   screenVolume: number;
   interactiveScreen: boolean;
+  suspended?: boolean;
   onClaimSeat: (seatId: string) => void;
   onVideoEnded?: () => void;
 }
@@ -34,6 +35,7 @@ export function RoomEnvironment3D({
   graphicsQuality,
   screenVolume,
   interactiveScreen,
+  suspended = false,
   onClaimSeat,
   onVideoEnded,
 }: RoomEnvironment3DProps) {
@@ -223,6 +225,7 @@ export function RoomEnvironment3D({
         accentColor={customization.lightColor}
         screenVolume={screenVolume}
         interactiveHtml={interactiveScreen}
+        suspended={suspended}
         onVideoEnded={onVideoEnded}
       />
 

@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 maxLength={24}
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
-                placeholder="Örn: Taha"
+                placeholder="Adını yaz..."
                 className="w-full rounded-xl border border-white/10 bg-[#090A0F] py-3 pl-10 pr-4 text-sm text-white placeholder-zinc-500 outline-none transition focus:border-[#7C5CFF]"
               />
             </div>

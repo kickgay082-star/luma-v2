@@ -122,7 +122,7 @@ export function RoomHudDrawers({
   if (drawer === 'none') return null;
 
   return (
-    <aside className="fixed right-3 top-16 bottom-20 z-30 flex w-[calc(100%-1.5rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0D0F17]/95 shadow-2xl backdrop-blur-xl">
+    <aside className="fixed right-3 top-16 bottom-20 z-40 flex w-[calc(100%-1.5rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0D0F17]/95 shadow-2xl backdrop-blur-xl">
       <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
         <span className="text-sm font-semibold text-white">
           {drawer === 'media'

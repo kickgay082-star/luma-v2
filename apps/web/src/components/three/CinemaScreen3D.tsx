@@ -5,47 +5,13 @@ import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import Hls from 'hls.js';
 import { VideoState } from '@luma/shared';
-import { AlertCircle, Radio, Volume2, VolumeX } from 'lucide-react';
-
-declare global {
-  interface Window {
-    YT?: {
-      Player: new (
-        element: HTMLElement | string,
-        options: {
-          videoId?: string;
-          playerVars?: Record<string, number | string>;
-          events?: {
-            onReady?: (e: { target: YTPlayerInstance }) => void;
-            onStateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
-            onError?: () => void;
-          };
-        },
-      ) => YTPlayerInstance;
-      PlayerState?: {
-        PLAYING: number;
-        PAUSED: number;
-        ENDED: number;
-      };
-    };
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-interface YTPlayerInstance {
-  loadVideoById: (id: string, startSeconds?: number) => void;
-  playVideo: () => void;
-  pauseVideo: () => void;
-  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
-  setPlaybackRate: (rate: number) => void;
-  getCurrentTime: () => number;
-  getPlayerState: () => number;
-  setVolume: (vol: number) => void;
-  mute: () => void;
-  unMute: () => void;
-  isMuted: () => boolean;
-  destroy: () => void;
-}
+import { AlertCircle, ExternalLink, Radio, Volume2, VolumeX } from 'lucide-react';
+import {
+  computeSyncedTime,
+  getYouTubeErrorMessage,
+  loadYouTubeIframeApi,
+  YTPlayerInstance,
+} from '@/lib/video/youtubeApi';
 
 interface CinemaScreen3DProps {
   position: [number, number, number];
@@ -55,6 +21,7 @@ interface CinemaScreen3DProps {
   accentColor: string;
   screenVolume?: number;
   interactiveHtml?: boolean;
+  suspended?: boolean;
   onVideoEnded?: () => void;
 }
 
@@ -66,11 +33,13 @@ export function CinemaScreen3D({
   accentColor,
   screenVolume = 0.8,
   interactiveHtml = false,
+  suspended = false,
   onVideoEnded,
 }: CinemaScreen3DProps) {
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [useHtmlVideoFallback, setUseHtmlVideoFallback] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [ytError, setYtError] = useState<string | null>(null);
   const [mutedPrompt, setMutedPrompt] = useState(false);
   const hlsRef = useRef<Hls | null>(null);
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +85,7 @@ export function CinemaScreen3D({
 
   // Native/HLS video element lifecycle for MP4, HLS, IPTV
   const isNativeOrHls =
+    !suspended &&
     Boolean(video?.url) &&
     (video?.sourceType === 'mp4' ||
       video?.sourceType === 'hls' ||
@@ -248,9 +218,10 @@ export function CinemaScreen3D({
   }, [videoEl, useHtmlVideoFallback]);
 
   // YouTube IFrame Player API Integration
-  const isYoutube = video?.sourceType === 'youtube' && Boolean(video.youtubeId);
+  const isYoutube = !suspended && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
 
   useEffect(() => {
+    setYtError(null);
     if (!isYoutube || !video?.youtubeId) {
       if (ytPlayerRef.current) {
         ytPlayerRef.current.destroy();
@@ -265,23 +236,37 @@ export function CinemaScreen3D({
     const mountPlayer = () => {
       if (cancelled || !ytContainerRef.current || !window.YT?.Player) return;
       if (ytPlayerRef.current) {
-        ytPlayerRef.current.loadVideoById(video.youtubeId!, video.currentTime || 0);
+        ytPlayerRef.current.loadVideoById(video.youtubeId!, computeSyncedTime(video));
         return;
       }
 
       ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
         videoId: video.youtubeId!,
+        host: 'https://www.youtube.com',
         playerVars: {
           autoplay: video.isPlaying ? 1 : 0,
           controls: 1,
           rel: 0,
           modestbranding: 1,
           playsinline: 1,
+          fs: 1,
+          enablejsapi: 1,
+          origin: typeof window !== 'undefined' ? window.location.origin : '',
         },
         events: {
           onReady: (e) => {
             ytReadyRef.current = true;
+            try {
+              const iframe = e.target.getIframe?.();
+              if (iframe) iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+            } catch {
+              // ignore
+            }
             e.target.setVolume(Math.round(screenVolume * 100));
+            const target = computeSyncedTime(video);
+            if (!video.isLive && target > 0.5) {
+              e.target.seekTo(target, true);
+            }
             if (video.isPlaying) {
               e.target.playVideo();
             } else {
@@ -293,31 +278,30 @@ export function CinemaScreen3D({
               onVideoEnded?.();
             }
           },
+          onError: (e) => {
+            setYtError(getYouTubeErrorMessage(e.data));
+          },
         },
       });
     };
 
-    if (window.YT?.Player) {
-      mountPlayer();
-    } else {
-      if (!document.getElementById('luma-yt-api')) {
-        const tag = document.createElement('script');
-        tag.id = 'luma-yt-api';
-        tag.src = 'https://www.youtube.com/iframe_api';
-        document.body.appendChild(tag);
-      }
-      const prevReady = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        prevReady?.();
-        mountPlayer();
-      };
-    }
+    loadYouTubeIframeApi(mountPlayer);
 
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isYoutube, video?.youtubeId]);
+
+  useEffect(() => {
+    return () => {
+      if (ytPlayerRef.current) {
+        ytPlayerRef.current.destroy();
+        ytPlayerRef.current = null;
+        ytReadyRef.current = false;
+      }
+    };
+  }, []);
 
   // Sync YouTube play/pause/seek/volume
   useEffect(() => {
@@ -406,6 +390,23 @@ export function CinemaScreen3D({
                 playbackRate={video.playbackRate}
                 volume={screenVolume}
               />
+            )}
+            {ytError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 p-10 text-center text-zinc-200">
+                <AlertCircle className="h-16 w-16 text-amber-400" />
+                <p className="mt-4 max-w-2xl text-2xl font-medium">{ytError}</p>
+                {video?.youtubeId && (
+                  <a
+                    href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-5 flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-lg font-semibold text-black"
+                  >
+                    <ExternalLink className="h-5 w-5" />
+                    <span>YouTube&apos;da Aç</span>
+                  </a>
+                )}
+              </div>
             )}
             {streamError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-6 text-center text-zinc-200">

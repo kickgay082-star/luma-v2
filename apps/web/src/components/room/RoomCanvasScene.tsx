@@ -31,6 +31,7 @@ interface RoomCanvasSceneProps {
   cameraZoom: number;
   screenVolume: number;
   interactiveScreen: boolean;
+  suspended?: boolean;
   inputLocked: boolean;
   mobileInputRef: MutableRefObject<MobileInputState>;
   listenerTransformRef: MutableRefObject<{
@@ -59,6 +60,7 @@ export function RoomCanvasScene({
   cameraZoom,
   screenVolume,
   interactiveScreen,
+  suspended = false,
   inputLocked,
   mobileInputRef,
   listenerTransformRef,
@@ -93,6 +95,7 @@ export function RoomCanvasScene({
         graphicsQuality={graphicsQuality}
         screenVolume={screenVolume}
         interactiveScreen={interactiveScreen}
+        suspended={suspended}
         onClaimSeat={onClaimSeat}
         onVideoEnded={onVideoEnded}
       />
