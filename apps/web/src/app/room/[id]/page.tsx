@@ -280,6 +280,15 @@ export default function RoomPage() {
           const self = ack.snapshot.players.find((p) => p.id === ack.playerId);
           if (self) localPositionRef.current = [...self.position];
 
+          const hadMic = voiceEngineRef.current?.isMicEnabled() ?? false;
+          if (
+            voiceEngineRef.current &&
+            voiceEngineRef.current.getLocalPlayerId() !== ack.playerId
+          ) {
+            voiceEngineRef.current.destroy();
+            voiceEngineRef.current = null;
+          }
+
           if (!voiceEngineRef.current) {
             const voice = new SpatialVoiceEngine({
               socket,
@@ -291,6 +300,9 @@ export default function RoomPage() {
               onError: (msg) => showNotice(msg),
             });
             voiceEngineRef.current = voice;
+            if (hadMic) {
+              voice.enableMicrophone(false).catch(() => {});
+            }
           }
           voiceEngineRef.current.syncPeers(ack.snapshot.players.map((p) => p.id));
         },

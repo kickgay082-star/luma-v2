@@ -49,8 +49,8 @@ export function CinemaScreen3D({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [ytError, setYtError] = useState<string | null>(null);
   const [mutedPrompt, setMutedPrompt] = useState(false);
+  const [ytContainerEl, setYtContainerEl] = useState<HTMLDivElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const ytContainerRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytReadyRef = useRef(false);
   const suppressSyncUntilRef = useRef(0);
@@ -185,7 +185,7 @@ export function CinemaScreen3D({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [video?.url, video?.sourceType]);
+  }, [isNativeOrHls, video?.url, video?.sourceType]);
 
   // Synchronize playback state for native/HLS video
   useEffect(() => {
@@ -238,7 +238,7 @@ export function CinemaScreen3D({
 
   useEffect(() => {
     setYtError(null);
-    if (!isYoutube || !video?.youtubeId) {
+    if (!isYoutube || !video?.youtubeId || !ytContainerEl) {
       if (ytPlayerRef.current) {
         ytPlayerRef.current.destroy();
         ytPlayerRef.current = null;
@@ -250,13 +250,14 @@ export function CinemaScreen3D({
     let cancelled = false;
 
     const mountPlayer = () => {
-      if (cancelled || !ytContainerRef.current || !window.YT?.Player) return;
+      if (cancelled || !ytContainerEl || !window.YT?.Player) return;
       if (ytPlayerRef.current) {
+        suppressSyncUntilRef.current = Date.now() + 900;
         ytPlayerRef.current.loadVideoById(video.youtubeId!, computeSyncedTime(video));
         return;
       }
 
-      ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
+      ytPlayerRef.current = new window.YT.Player(ytContainerEl, {
         videoId: video.youtubeId!,
         host: 'https://www.youtube.com',
         playerVars: {
@@ -350,7 +351,7 @@ export function CinemaScreen3D({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isYoutube, video?.youtubeId]);
+  }, [isYoutube, video?.youtubeId, ytContainerEl]);
 
   useEffect(() => {
     return () => {
@@ -435,7 +436,7 @@ export function CinemaScreen3D({
           }}
         >
           <div className="relative h-full w-full overflow-hidden rounded-sm bg-black">
-            {isYoutube && <div ref={ytContainerRef} className="h-full w-full" />}
+            {isYoutube && <div ref={setYtContainerEl} className="h-full w-full" />}
             {useHtmlVideoFallback && video?.url && (
               <HtmlFallbackHlsVideo
                 url={video.url}

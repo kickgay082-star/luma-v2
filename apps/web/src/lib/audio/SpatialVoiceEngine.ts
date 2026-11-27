@@ -14,6 +14,8 @@ import {
 interface PeerNodeBundle {
   peerId: string;
   pc: RTCPeerConnection;
+  audioSender: RTCRtpSender;
+  pendingIceCandidates: RTCIceCandidateInit[];
   remoteStream: MediaStream | null;
   hiddenAudioEl: HTMLAudioElement | null;
   sourceNode: MediaStreamAudioSourceNode | null;
@@ -27,6 +29,8 @@ interface PeerNodeBundle {
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
 ];
 
 function getIceServers(): RTCIceServer[] {
@@ -56,6 +60,7 @@ export class SpatialVoiceEngine {
   private micEnabled = false;
   private vadTimer: number | null = null;
   private lastVoiceEmit = 0;
+  private unlockHandler: (() => void) | null = null;
 
   private onLocalVoiceUpdate: (micEnabled: boolean, isSpeaking: boolean, level: number) => void;
   private onError: (msg: string) => void;
@@ -72,11 +77,37 @@ export class SpatialVoiceEngine {
     this.settings = params.settings;
     this.onLocalVoiceUpdate = params.onLocalVoiceUpdate;
     this.onError = params.onError;
+
+    // Unlock Web Audio + hidden WebRTC audio elements on any user interaction
+    if (typeof window !== 'undefined') {
+      this.unlockHandler = () => {
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+          this.audioCtx.resume().catch(() => {});
+        }
+        for (const bundle of this.peers.values()) {
+          if (bundle.hiddenAudioEl && bundle.hiddenAudioEl.paused) {
+            bundle.hiddenAudioEl.play().catch(() => {});
+          }
+        }
+      };
+      window.addEventListener('pointerdown', this.unlockHandler, { passive: true });
+      window.addEventListener('keydown', this.unlockHandler, { passive: true });
+    }
+  }
+
+  getLocalPlayerId(): string {
+    return this.localPlayerId;
+  }
+
+  isMicEnabled(): boolean {
+    return this.micEnabled;
   }
 
   ensureAudioContext(): AudioContext {
     if (!this.audioCtx) {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.audioCtx = new Ctx({ latencyHint: 'interactive' });
       this.masterGain = this.audioCtx.createGain();
       this.masterGain.gain.value = this.settings.masterVolume;
@@ -139,6 +170,9 @@ export class SpatialVoiceEngine {
   async enableMicrophone(forceRestart: boolean): Promise<boolean> {
     try {
       const ctx = this.ensureAudioContext();
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
+      }
       if (forceRestart && this.rawMicStream) {
         this.rawMicStream.getTracks().forEach((t) => t.stop());
       }
@@ -174,16 +208,11 @@ export class SpatialVoiceEngine {
       this.processedMicStream = dest.stream;
       this.micEnabled = true;
 
-      // Attach audio track to all existing peer connections
+      // Replace track directly on the existing sendrecv audioSender (no renegotiation needed)
       const track = dest.stream.getAudioTracks()[0];
       if (track) {
         for (const bundle of this.peers.values()) {
-          const sender = bundle.pc.getSenders().find((s) => s.track?.kind === 'audio');
-          if (sender) {
-            await sender.replaceTrack(track);
-          } else {
-            bundle.pc.addTrack(track, dest.stream);
-          }
+          await bundle.audioSender.replaceTrack(track).catch(() => {});
         }
       }
 
@@ -215,10 +244,7 @@ export class SpatialVoiceEngine {
     }
     this.processedMicStream = null;
     for (const bundle of this.peers.values()) {
-      const sender = bundle.pc.getSenders().find((s) => s.track?.kind === 'audio');
-      if (sender) {
-        sender.replaceTrack(null).catch(() => {});
-      }
+      bundle.audioSender.replaceTrack(null).catch(() => {});
     }
     this.onLocalVoiceUpdate(false, false, 0);
     this.socket.emit('voice:state', {
@@ -260,14 +286,12 @@ export class SpatialVoiceEngine {
   syncPeers(remotePlayerIds: string[]): void {
     const activeSet = new Set(remotePlayerIds.filter((id) => id !== this.localPlayerId));
 
-    // Close departed peers
     for (const peerId of this.peers.keys()) {
       if (!activeSet.has(peerId)) {
         this.removePeer(peerId);
       }
     }
 
-    // Create connections for new peers (polite/impolite initiation)
     for (const peerId of activeSet) {
       if (!this.peers.has(peerId)) {
         this.createPeer(peerId);
@@ -277,9 +301,22 @@ export class SpatialVoiceEngine {
 
   private createPeer(peerId: string): PeerNodeBundle {
     const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+    const initialTrack = this.processedMicStream?.getAudioTracks()[0] ?? null;
+
+    // Always allocate exactly ONE bidirectional audio transceiver
+    const transceiver = pc.addTransceiver('audio', {
+      direction: 'sendrecv',
+      streams: this.processedMicStream ? [this.processedMicStream] : undefined,
+    });
+    if (initialTrack) {
+      transceiver.sender.replaceTrack(initialTrack).catch(() => {});
+    }
+
     const bundle: PeerNodeBundle = {
       peerId,
       pc,
+      audioSender: transceiver.sender,
+      pendingIceCandidates: [],
       remoteStream: null,
       hiddenAudioEl: null,
       sourceNode: null,
@@ -291,21 +328,16 @@ export class SpatialVoiceEngine {
     };
     this.peers.set(peerId, bundle);
 
-    // Ensure audio transceiver always exists even if local mic isn't enabled yet
-    if (this.processedMicStream) {
-      const track = this.processedMicStream.getAudioTracks()[0];
-      if (track) pc.addTrack(track, this.processedMicStream);
-    } else {
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-    }
-
     const isPolite = this.localPlayerId < peerId;
 
+    // Only the impolite side initiates the single initial offer via negotiationneeded
     pc.onnegotiationneeded = async () => {
-      if (isPolite) return; // Impolite side initiates offers cleanly to avoid glare
+      if (isPolite || bundle.makingOffer || pc.signalingState !== 'stable') return;
       try {
         bundle.makingOffer = true;
-        await pc.setLocalDescription();
+        const offer = await pc.createOffer();
+        if (pc.signalingState !== 'stable') return;
+        await pc.setLocalDescription(offer);
         if (pc.localDescription) {
           this.socket.emit('webrtc:offer', {
             targetPlayerId: peerId,
@@ -336,26 +368,11 @@ export class SpatialVoiceEngine {
       this.attachRemoteAudioStream(bundle, stream);
     };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
         pc.restartIce?.();
       }
     };
-
-    // Kick initial offer from impolite peer
-    if (!isPolite) {
-      pc.createOffer()
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => {
-          if (pc.localDescription) {
-            this.socket.emit('webrtc:offer', {
-              targetPlayerId: peerId,
-              sdp: { type: 'offer', sdp: pc.localDescription.sdp },
-            });
-          }
-        })
-        .catch(() => {});
-    }
 
     return bundle;
   }
@@ -363,23 +380,30 @@ export class SpatialVoiceEngine {
   private attachRemoteAudioStream(bundle: PeerNodeBundle, stream: MediaStream): void {
     bundle.remoteStream = stream;
 
-    // Chrome WebRTC stream activation anchor (muted so only Web Audio PannerNode outputs sound!)
+    // Chrome WebRTC stream activation anchor attached to DOM (muted so Web Audio PannerNode outputs sound)
     if (!bundle.hiddenAudioEl) {
       const audio = document.createElement('audio');
       audio.autoplay = true;
       audio.muted = true;
+      audio.style.display = 'none';
       audio.setAttribute('playsinline', 'true');
       audio.srcObject = stream;
+      document.body?.appendChild(audio);
       audio.play().catch(() => {});
       bundle.hiddenAudioEl = audio;
     } else {
       bundle.hiddenAudioEl.srcObject = stream;
+      bundle.hiddenAudioEl.play().catch(() => {});
     }
 
     const ctx = this.ensureAudioContext();
     if (!this.masterGain) return;
 
     bundle.sourceNode?.disconnect();
+    bundle.filterNode?.disconnect();
+    bundle.pannerNode?.disconnect();
+    bundle.gainNode?.disconnect();
+
     const source = ctx.createMediaStreamSource(stream);
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
@@ -389,7 +413,7 @@ export class SpatialVoiceEngine {
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'linear';
     panner.refDistance = 1;
-    panner.maxDistance = 100; // We apply our exact custom spatial curve via gainNode
+    panner.maxDistance = 100;
     panner.rolloffFactor = 0;
 
     const gain = ctx.createGain();
@@ -404,6 +428,18 @@ export class SpatialVoiceEngine {
     bundle.filterNode = filter;
     bundle.pannerNode = panner;
     bundle.gainNode = gain;
+  }
+
+  private async flushPendingIce(bundle: PeerNodeBundle): Promise<void> {
+    if (!bundle.pc.remoteDescription || bundle.pendingIceCandidates.length === 0) return;
+    const queued = bundle.pendingIceCandidates.splice(0, bundle.pendingIceCandidates.length);
+    for (const candidate of queued) {
+      try {
+        await bundle.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // ignore stale ICE
+      }
+    }
   }
 
   async handleSignal(
@@ -425,14 +461,13 @@ export class SpatialVoiceEngine {
         if (bundle.ignoreOffer) return;
 
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-        if (this.processedMicStream) {
-          const track = this.processedMicStream.getAudioTracks()[0];
-          if (track && !pc.getSenders().some((s) => s.track === track)) {
-            const sender = pc.getSenders().find((s) => s.track?.kind === 'audio');
-            if (sender) await sender.replaceTrack(track);
-            else pc.addTrack(track, this.processedMicStream);
-          }
+        await this.flushPendingIce(bundle);
+
+        const track = this.processedMicStream?.getAudioTracks()[0] ?? null;
+        if (track && bundle.audioSender.track !== track) {
+          await bundle.audioSender.replaceTrack(track).catch(() => {});
         }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         if (pc.localDescription) {
@@ -442,9 +477,15 @@ export class SpatialVoiceEngine {
           });
         }
       } else if (kind === 'answer' && payload.sdp) {
+        if (pc.signalingState !== 'have-local-offer') return;
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        await this.flushPendingIce(bundle);
       } else if (kind === 'ice' && payload.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        if (!pc.remoteDescription) {
+          bundle.pendingIceCandidates.push(payload.candidate);
+        } else {
+          await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        }
       }
     } catch {
       // ignore transient ICE race errors
@@ -471,6 +512,9 @@ export class SpatialVoiceEngine {
     const refDist = this.settings.refDistance || 3;
 
     if (ctx) {
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
       const listener = ctx.listener;
       const t = ctx.currentTime;
       if (listener.positionX) {
@@ -519,7 +563,6 @@ export class SpatialVoiceEngine {
 
       bundle.gainNode.gain.setTargetAtTime(effectiveGain, t, 0.05);
 
-      // Subtle acoustic warmth & distance muffling
       if (bundle.filterNode) {
         const baseCutoff =
           this.settings.acoustics === 'intimate'
@@ -545,12 +588,18 @@ export class SpatialVoiceEngine {
     if (bundle.hiddenAudioEl) {
       bundle.hiddenAudioEl.pause();
       bundle.hiddenAudioEl.srcObject = null;
+      bundle.hiddenAudioEl.remove();
     }
     bundle.pc.close();
     this.peers.delete(peerId);
   }
 
   destroy(): void {
+    if (typeof window !== 'undefined' && this.unlockHandler) {
+      window.removeEventListener('pointerdown', this.unlockHandler);
+      window.removeEventListener('keydown', this.unlockHandler);
+      this.unlockHandler = null;
+    }
     this.disableMicrophone();
     for (const peerId of Array.from(this.peers.keys())) {
       this.removePeer(peerId);
