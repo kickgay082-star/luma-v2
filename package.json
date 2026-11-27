@@ -1,0 +1,21 @@
+{
+  "name": "luma-v2",
+  "version": "2.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n WEB,RT -c cyan,magenta \"npm run dev --workspace=@luma/web\" \"npm run dev --workspace=@luma/realtime\"",
+    "build": "npm run build --workspace=@luma/shared && npm run build --workspace=@luma/realtime && npm run build --workspace=@luma/web",
+    "start": "concurrently -n WEB,RT -c cyan,magenta \"npm run start --workspace=@luma/web\" \"npm run start --workspace=@luma/realtime\"",
+    "typecheck": "npm run typecheck --workspace=@luma/shared && npm run typecheck --workspace=@luma/realtime && npm run typecheck --workspace=@luma/web",
+    "test": "npm run test --workspace=@luma/shared && npm run test --workspace=@luma/realtime"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

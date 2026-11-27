@@ -1,0 +1,27 @@
+databases:
+  - name: luma-postgres
+    plan: free
+    databaseName: luma
+    user: luma
+
+services:
+  - type: web
+    name: luma-realtime
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=@luma/shared && npm run build --workspace=@luma/realtime
+    startCommand: npm run start --workspace=@luma/realtime
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REALTIME_PORT
+        value: "10000"
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: luma-postgres
+          property: connectionString
