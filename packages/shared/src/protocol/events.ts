@@ -56,6 +56,13 @@ export interface WebRTCSignalPayload {
   };
 }
 
+export interface VoicePcmPayload {
+  targetPlayerIds: string[];
+  fromPlayerId?: string;
+  sampleRate: number;
+  pcm: ArrayBuffer;
+}
+
 export interface ClientToServerEvents {
   'room:join': (payload: JoinRoomPayload, ack: (res: JoinRoomAck) => void) => void;
   'room:leave': () => void;
@@ -69,6 +76,7 @@ export interface ClientToServerEvents {
   'webrtc:offer': (payload: WebRTCSignalPayload) => void;
   'webrtc:answer': (payload: WebRTCSignalPayload) => void;
   'webrtc:ice': (payload: WebRTCSignalPayload) => void;
+  'voice:pcm': (payload: VoicePcmPayload) => void;
   'video:control': (payload: VideoControlPayload, ack?: (res: { ok: boolean; error?: string }) => void) => void;
   'queue:add': (
     payload: Omit<QueueItem, 'id' | 'addedBy' | 'addedByName' | 'addedAt'>,
@@ -114,6 +122,7 @@ export interface ServerToClientEvents {
   'webrtc:offer': (payload: WebRTCSignalPayload) => void;
   'webrtc:answer': (payload: WebRTCSignalPayload) => void;
   'webrtc:ice': (payload: WebRTCSignalPayload) => void;
+  'voice:pcm': (payload: VoicePcmPayload) => void;
   'video:synced': (video: VideoState) => void;
   'queue:synced': (queue: QueueItem[]) => void;
   'room:customized': (payload: { customization: RoomCustomization; seats: SeatState[] }) => void;

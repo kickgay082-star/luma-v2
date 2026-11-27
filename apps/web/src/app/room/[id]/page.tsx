@@ -342,6 +342,9 @@ export default function RoomPage() {
     socket.on('webrtc:ice', (payload) => {
       voiceEngineRef.current?.handleSignal('ice', payload);
     });
+    socket.on('voice:pcm', (payload) => {
+      voiceEngineRef.current?.handleIncomingPcm(payload);
+    });
 
     socket.on('video:synced', setVideo);
     socket.on('queue:synced', setQueue);

@@ -232,6 +232,24 @@ export function createRealtimeServer(options?: {
       });
     });
 
+    socket.on('voice:pcm', (payload) => {
+      const room = roomManager.getRoomBySocket(socket.id);
+      if (!room) return;
+      const player = room.players.get(socket.id);
+      if (!player || player.mutedByMod) return;
+      if (!Array.isArray(payload?.targetPlayerIds) || payload.targetPlayerIds.length === 0) return;
+      for (const targetId of payload.targetPlayerIds.slice(0, 24)) {
+        if (targetId !== socket.id && room.players.has(targetId)) {
+          io.to(targetId).emit('voice:pcm', {
+            targetPlayerIds: [],
+            fromPlayerId: socket.id,
+            sampleRate: payload.sampleRate,
+            pcm: payload.pcm,
+          });
+        }
+      }
+    });
+
     socket.on('video:control', (payload, ack) => {
       if (!rateLimiter.consume(`${socket.id}:video`, 10, 3)) {
         ack?.({ ok: false, error: 'Çok hızlı video kontrolü.' });
