@@ -158,7 +158,10 @@ async function ensureReady(): Promise<void> {
     }
 
     await seedInitialData();
-  })();
+  })().catch((err) => {
+    globalForDb.__lumaWebInit = undefined;
+    throw err;
+  });
 
   return globalForDb.__lumaWebInit;
 }
