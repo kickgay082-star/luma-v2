@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Box,
   ExternalLink,
+  Lock,
   Maximize,
   MessageSquare,
   Mic,
@@ -25,6 +26,8 @@ import {
   YTPlayerInstance,
 } from '@/lib/video/youtubeApi';
 
+const PLAYBACK_RATES = [0.5, 1, 1.25, 1.5, 2] as const;
+
 interface TheaterVideoOverlayProps {
   roomName: string;
   onlineCount: number;
@@ -34,9 +37,16 @@ interface TheaterVideoOverlayProps {
   screenVolume: number;
   micEnabled: boolean;
   localAudioLevel: number;
+  canControlVideo: boolean;
   onChangeVolume: (vol: number) => void;
   onTogglePlay: () => void;
   onSeek: (targetSec: number) => void;
+  onChangeRate: (rate: number) => void;
+  onPlayerSyncAction: (payload: {
+    action: 'play' | 'pause' | 'seek' | 'rate';
+    currentTime?: number;
+    playbackRate?: number;
+  }) => void;
   onNextQueue: () => void;
   onVideoEnded: () => void;
   onToggleMic: () => void;
@@ -61,9 +71,12 @@ export function TheaterVideoOverlay({
   screenVolume,
   micEnabled,
   localAudioLevel,
+  canControlVideo,
   onChangeVolume,
   onTogglePlay,
   onSeek,
+  onChangeRate,
+  onPlayerSyncAction,
   onNextQueue,
   onVideoEnded,
   onToggleMic,
@@ -77,6 +90,14 @@ export function TheaterVideoOverlay({
   const ytReadyRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const suppressSyncUntilRef = useRef(0);
+  const latestVideoRef = useRef<VideoState | null>(video);
+  const canControlRef = useRef(canControlVideo);
+  const syncActionRef = useRef(onPlayerSyncAction);
+
+  latestVideoRef.current = video;
+  canControlRef.current = canControlVideo;
+  syncActionRef.current = onPlayerSyncAction;
 
   const [ytError, setYtError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -111,6 +132,7 @@ export function TheaterVideoOverlay({
     const mountPlayer = () => {
       if (cancelled || !ytRef.current || !window.YT?.Player) return;
       if (ytPlayerRef.current) {
+        suppressSyncUntilRef.current = Date.now() + 900;
         ytPlayerRef.current.loadVideoById(video.youtubeId!, computeSyncedTime(video));
         return;
       }
@@ -131,6 +153,7 @@ export function TheaterVideoOverlay({
         events: {
           onReady: (e) => {
             ytReadyRef.current = true;
+            suppressSyncUntilRef.current = Date.now() + 900;
             try {
               const iframe = e.target.getIframe?.();
               if (iframe) iframe.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -138,6 +161,13 @@ export function TheaterVideoOverlay({
               // ignore
             }
             e.target.setVolume(Math.round(screenVolume * 100));
+            if (!video.isLive && Number.isFinite(video.playbackRate)) {
+              try {
+                e.target.setPlaybackRate(video.playbackRate);
+              } catch {
+                // ignore
+              }
+            }
             const target = computeSyncedTime(video);
             if (!video.isLive && target > 0.5) {
               e.target.seekTo(target, true);
@@ -146,9 +176,44 @@ export function TheaterVideoOverlay({
             else e.target.pauseVideo();
           },
           onStateChange: (e) => {
-            if (window.YT?.PlayerState && e.data === window.YT.PlayerState.ENDED) {
+            const ps = window.YT?.PlayerState;
+            if (!ps) return;
+            if (e.data === ps.ENDED) {
               onVideoEnded();
+              return;
             }
+            if (Date.now() < suppressSyncUntilRef.current) return;
+            const srv = latestVideoRef.current;
+            if (!srv) return;
+            if (e.data === ps.PLAYING || e.data === ps.PAUSED) {
+              const wantsPlay = e.data === ps.PLAYING;
+              if (wantsPlay === srv.isPlaying) return;
+              if (!canControlRef.current) {
+                suppressSyncUntilRef.current = Date.now() + 700;
+                if (srv.isPlaying) e.target.playVideo();
+                else e.target.pauseVideo();
+                return;
+              }
+              syncActionRef.current({
+                action: wantsPlay ? 'play' : 'pause',
+                currentTime: e.target.getCurrentTime?.() || srv.currentTime,
+              });
+            }
+          },
+          onPlaybackRateChange: (e) => {
+            if (Date.now() < suppressSyncUntilRef.current) return;
+            const srv = latestVideoRef.current;
+            if (!srv || e.data === srv.playbackRate) return;
+            if (!canControlRef.current) {
+              suppressSyncUntilRef.current = Date.now() + 700;
+              try {
+                e.target.setPlaybackRate(srv.playbackRate);
+              } catch {
+                // ignore
+              }
+              return;
+            }
+            syncActionRef.current({ action: 'rate', playbackRate: e.data });
           },
           onError: (e) => {
             setYtError(getYouTubeErrorMessage(e.data));
@@ -178,7 +243,15 @@ export function TheaterVideoOverlay({
   useEffect(() => {
     const player = ytPlayerRef.current;
     if (!isYoutube || !player || !ytReadyRef.current || !video) return;
+    suppressSyncUntilRef.current = Date.now() + 850;
     player.setVolume(Math.round(screenVolume * 100));
+    if (!video.isLive && Number.isFinite(video.playbackRate)) {
+      try {
+        player.setPlaybackRate(video.playbackRate);
+      } catch {
+        // ignore
+      }
+    }
     const expected = computeSyncedTime(video);
     const actual = player.getCurrentTime?.() || 0;
     if (!video.isLive && Math.abs(actual - expected) > 1.6) {
@@ -241,6 +314,7 @@ export function TheaterVideoOverlay({
   useEffect(() => {
     const el = videoRef.current;
     if (!isNativeOrHls || !el || !video) return;
+    suppressSyncUntilRef.current = Date.now() + 850;
     el.volume = Math.max(0, Math.min(1, screenVolume));
     if (!video.isLive && Number.isFinite(video.playbackRate)) {
       el.playbackRate = video.playbackRate;
@@ -256,6 +330,31 @@ export function TheaterVideoOverlay({
     if (video.isPlaying) el.play().catch(() => {});
     else el.pause();
   }, [isNativeOrHls, video, screenVolume]);
+
+  const handleNativeVideoEvent = (
+    kind: 'play' | 'pause' | 'rate' | 'seek',
+    el: HTMLVideoElement,
+  ) => {
+    if (Date.now() < suppressSyncUntilRef.current) return;
+    const srv = latestVideoRef.current;
+    if (!srv) return;
+    if (!canControlRef.current) {
+      suppressSyncUntilRef.current = Date.now() + 700;
+      el.playbackRate = srv.playbackRate;
+      if (srv.isPlaying) el.play().catch(() => {});
+      else el.pause();
+      return;
+    }
+    if (kind === 'play' && !srv.isPlaying) {
+      syncActionRef.current({ action: 'play', currentTime: el.currentTime });
+    } else if (kind === 'pause' && srv.isPlaying) {
+      syncActionRef.current({ action: 'pause', currentTime: el.currentTime });
+    } else if (kind === 'rate' && el.playbackRate !== srv.playbackRate) {
+      syncActionRef.current({ action: 'rate', playbackRate: el.playbackRate });
+    } else if (kind === 'seek' && !srv.isLive) {
+      syncActionRef.current({ action: 'seek', currentTime: el.currentTime });
+    }
+  };
 
   const toggleBrowserFullscreen = async () => {
     if (!containerRef.current) return;
@@ -284,6 +383,12 @@ export function TheaterVideoOverlay({
             <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-400">
               <Radio className="h-3 w-3 animate-pulse" />
               CANLI
+            </span>
+          )}
+          {!canControlVideo && (
+            <span className="hidden shrink-0 items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300 sm:flex">
+              <Lock className="h-3 w-3" />
+              Yalnızca Host / Yetkili
             </span>
           )}
         </div>
@@ -356,6 +461,10 @@ export function TheaterVideoOverlay({
               ref={videoRef}
               controls
               playsInline
+              onPlay={(e) => handleNativeVideoEvent('play', e.currentTarget)}
+              onPause={(e) => handleNativeVideoEvent('pause', e.currentTarget)}
+              onRateChange={(e) => handleNativeVideoEvent('rate', e.currentTarget)}
+              onSeeked={(e) => handleNativeVideoEvent('seek', e.currentTarget)}
               onEnded={onVideoEnded}
               onError={() => setStreamError('Video akışı yüklenemedi veya erişime kapalı.')}
               className="h-full w-full bg-black object-contain"
@@ -410,11 +519,13 @@ export function TheaterVideoOverlay({
         </div>
 
         {video?.url && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              disabled={!canControlVideo}
               onClick={onTogglePlay}
-              className="rounded-xl bg-[#7C5CFF] p-2 text-white hover:bg-[#6D4AF5]"
+              className="rounded-xl bg-[#7C5CFF] p-2 text-white hover:bg-[#6D4AF5] disabled:cursor-not-allowed disabled:opacity-40"
+              title={canControlVideo ? 'Oynat / Duraklat' : 'Yetkiniz yok'}
             >
               {video.isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
@@ -426,26 +537,48 @@ export function TheaterVideoOverlay({
                 </span>
                 <button
                   type="button"
+                  disabled={!canControlVideo}
                   onClick={() => onSeek(Math.max(0, displayTime - 15))}
-                  className="rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10"
+                  className="rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 disabled:opacity-40"
                 >
                   -15s
                 </button>
                 <button
                   type="button"
+                  disabled={!canControlVideo}
                   onClick={() => onSeek(displayTime + 15)}
-                  className="rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10"
+                  className="rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 disabled:opacity-40"
                 >
                   +15s
                 </button>
+
+                <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#090A0F] p-0.5">
+                  {PLAYBACK_RATES.map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      disabled={!canControlVideo}
+                      onClick={() => onChangeRate(rate)}
+                      className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] transition ${
+                        video.playbackRate === rate
+                          ? 'bg-[#7C5CFF] text-white'
+                          : 'text-zinc-400 hover:text-white'
+                      } disabled:opacity-40`}
+                      title={`${rate}x Hız`}
+                    >
+                      {rate}x
+                    </button>
+                  ))}
+                </div>
               </>
             )}
 
             {hasQueue && (
               <button
                 type="button"
+                disabled={!canControlVideo}
                 onClick={onNextQueue}
-                className="rounded-xl bg-white/[0.06] p-2 text-zinc-300 hover:bg-white/10"
+                className="rounded-xl bg-white/[0.06] p-2 text-zinc-300 hover:bg-white/10 disabled:opacity-40"
                 title="Sıradaki"
               >
                 <SkipForward className="h-4 w-4" />

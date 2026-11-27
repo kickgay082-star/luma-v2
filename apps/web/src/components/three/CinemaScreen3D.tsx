@@ -22,6 +22,12 @@ interface CinemaScreen3DProps {
   screenVolume?: number;
   interactiveHtml?: boolean;
   suspended?: boolean;
+  canControlVideo?: boolean;
+  onPlayerSyncAction?: (payload: {
+    action: 'play' | 'pause' | 'seek' | 'rate';
+    currentTime?: number;
+    playbackRate?: number;
+  }) => void;
   onVideoEnded?: () => void;
 }
 
@@ -34,6 +40,8 @@ export function CinemaScreen3D({
   screenVolume = 0.8,
   interactiveHtml = false,
   suspended = false,
+  canControlVideo = true,
+  onPlayerSyncAction,
   onVideoEnded,
 }: CinemaScreen3DProps) {
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
@@ -45,6 +53,14 @@ export function CinemaScreen3D({
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytReadyRef = useRef(false);
+  const suppressSyncUntilRef = useRef(0);
+  const latestVideoRef = useRef<VideoState | null>(video);
+  const canControlRef = useRef(canControlVideo);
+  const syncActionRef = useRef(onPlayerSyncAction);
+
+  latestVideoRef.current = video;
+  canControlRef.current = canControlVideo;
+  syncActionRef.current = onPlayerSyncAction;
 
   // Standby procedural canvas texture when no video is playing
   const standbyTexture = useMemo(() => {
@@ -256,6 +272,7 @@ export function CinemaScreen3D({
         events: {
           onReady: (e) => {
             ytReadyRef.current = true;
+            suppressSyncUntilRef.current = Date.now() + 900;
             try {
               const iframe = e.target.getIframe?.();
               if (iframe) iframe.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -263,6 +280,13 @@ export function CinemaScreen3D({
               // ignore
             }
             e.target.setVolume(Math.round(screenVolume * 100));
+            if (!video.isLive && Number.isFinite(video.playbackRate)) {
+              try {
+                e.target.setPlaybackRate(video.playbackRate);
+              } catch {
+                // ignore
+              }
+            }
             const target = computeSyncedTime(video);
             if (!video.isLive && target > 0.5) {
               e.target.seekTo(target, true);
@@ -274,9 +298,44 @@ export function CinemaScreen3D({
             }
           },
           onStateChange: (e) => {
-            if (window.YT?.PlayerState && e.data === window.YT.PlayerState.ENDED) {
+            const ps = window.YT?.PlayerState;
+            if (!ps) return;
+            if (e.data === ps.ENDED) {
               onVideoEnded?.();
+              return;
             }
+            if (Date.now() < suppressSyncUntilRef.current) return;
+            const srv = latestVideoRef.current;
+            if (!srv) return;
+            if (e.data === ps.PLAYING || e.data === ps.PAUSED) {
+              const wantsPlay = e.data === ps.PLAYING;
+              if (wantsPlay === srv.isPlaying) return;
+              if (!canControlRef.current) {
+                suppressSyncUntilRef.current = Date.now() + 700;
+                if (srv.isPlaying) e.target.playVideo();
+                else e.target.pauseVideo();
+                return;
+              }
+              syncActionRef.current?.({
+                action: wantsPlay ? 'play' : 'pause',
+                currentTime: e.target.getCurrentTime?.() || srv.currentTime,
+              });
+            }
+          },
+          onPlaybackRateChange: (e) => {
+            if (Date.now() < suppressSyncUntilRef.current) return;
+            const srv = latestVideoRef.current;
+            if (!srv || e.data === srv.playbackRate) return;
+            if (!canControlRef.current) {
+              suppressSyncUntilRef.current = Date.now() + 700;
+              try {
+                e.target.setPlaybackRate(srv.playbackRate);
+              } catch {
+                // ignore
+              }
+              return;
+            }
+            syncActionRef.current?.({ action: 'rate', playbackRate: e.data });
           },
           onError: (e) => {
             setYtError(getYouTubeErrorMessage(e.data));
@@ -308,6 +367,7 @@ export function CinemaScreen3D({
     const player = ytPlayerRef.current;
     if (!isYoutube || !player || !ytReadyRef.current || !video) return;
 
+    suppressSyncUntilRef.current = Date.now() + 850;
     player.setVolume(Math.round(screenVolume * 100));
     if (!video.isLive && Number.isFinite(video.playbackRate)) {
       try {
@@ -317,11 +377,7 @@ export function CinemaScreen3D({
       }
     }
 
-    const now = Date.now();
-    const expectedTime = video.isPlaying
-      ? video.currentTime + Math.max(0, (now - video.updatedAt) / 1000) * video.playbackRate
-      : video.currentTime;
-
+    const expectedTime = computeSyncedTime(video);
     const actual = player.getCurrentTime?.() || 0;
     if (!video.isLive && Math.abs(actual - expectedTime) > 1.6) {
       player.seekTo(expectedTime, true);

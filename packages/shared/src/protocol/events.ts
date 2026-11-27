@@ -86,7 +86,7 @@ export interface ClientToServerEvents {
   'chat:delete': (messageId: string) => void;
   'mod:action': (payload: {
     targetPlayerId: string;
-    action: 'kick' | 'mute_voice' | 'unmute_voice' | 'mute_chat' | 'unmute_chat' | 'promote_mod' | 'demote_mod' | 'transfer_owner';
+    action: 'kick' | 'mute_voice' | 'unmute_voice' | 'mute_chat' | 'unmute_chat' | 'promote_mod' | 'demote_mod' | 'transfer_owner' | 'allow_video' | 'deny_video';
   }) => void;
 }
 

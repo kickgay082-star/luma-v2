@@ -51,6 +51,8 @@ export interface ActiveRoom {
   mutedVoiceUserIds: Set<string>;
   bannedUserIds: Set<string>;
   moderators: Set<string>;
+  videoAllowedUserIds: Set<string>;
+  videoDeniedUserIds: Set<string>;
 }
 
 export class RoomManager {
@@ -103,10 +105,19 @@ export class RoomManager {
       mutedVoiceUserIds: new Set(),
       bannedUserIds: new Set(),
       moderators: new Set(),
+      videoAllowedUserIds: new Set(),
+      videoDeniedUserIds: new Set(),
     };
 
     this.rooms.set(active.summary.id, active);
     return active;
+  }
+
+  private canPlayerControlVideo(room: ActiveRoom, role: PlayerRole, userId: string): boolean {
+    if (role === 'owner' || role === 'moderator') return true;
+    if (room.videoDeniedUserIds.has(userId)) return false;
+    if (room.video.hostOnlyControl) return room.videoAllowedUserIds.has(userId);
+    return true;
   }
 
   getRoomBySocket(socketId: string): ActiveRoom | null {
@@ -186,7 +197,10 @@ export class RoomManager {
     );
 
     let role: PlayerRole = 'member';
+    const hasActiveOwner = Array.from(room.players.values()).some((p) => p.role === 'owner');
     if (room.summary.ownerId === params.userId) {
+      role = 'owner';
+    } else if (room.summary.ownerId === 'luma-studio' && !hasActiveOwner) {
       role = 'owner';
     } else if (room.moderators.has(params.userId)) {
       role = 'moderator';
@@ -213,6 +227,7 @@ export class RoomManager {
       isSpeaking: false,
       audioLevel: 0,
       mutedByMod: room.mutedVoiceUserIds.has(params.userId),
+      canControlVideo: this.canPlayerControlVideo(room, role, params.userId),
       avatar: validatedAvatar?.success ? validatedAvatar.data : DEFAULT_AVATAR_CONFIG,
       connectedAt: Date.now(),
       latencyMs: 0,
@@ -258,9 +273,12 @@ export class RoomManager {
       const nextOwner = candidates[0];
       if (nextOwner) {
         nextOwner.role = 'owner';
-        room.summary.ownerId = nextOwner.userId;
-        room.summary.ownerName = nextOwner.displayName;
-        updateRoomOwner(room.summary.id, nextOwner.userId, nextOwner.displayName).catch(console.error);
+        nextOwner.canControlVideo = true;
+        if (!room.summary.id.startsWith('luma-')) {
+          room.summary.ownerId = nextOwner.userId;
+          room.summary.ownerName = nextOwner.displayName;
+          updateRoomOwner(room.summary.id, nextOwner.userId, nextOwner.displayName).catch(console.error);
+        }
         promotedOwner = nextOwner;
       }
     }
@@ -506,25 +524,34 @@ export class RoomManager {
   handleVideoControl(
     socketId: string,
     payload: VideoControlPayload,
-  ): { ok: true; room: ActiveRoom; video: VideoState } | { ok: false; error: string } {
+  ): { ok: true; room: ActiveRoom; video: VideoState; updatedPlayers?: PlayerState[] } | { ok: false; error: string } {
     const room = this.getRoomBySocket(socketId);
     if (!room) return { ok: false, error: 'Odada değilsiniz.' };
     const player = room.players.get(socketId);
     if (!player) return { ok: false, error: 'Oyuncu bulunamadı.' };
 
     const isPrivileged = player.role === 'owner' || player.role === 'moderator';
-    if (room.video.hostOnlyControl && !isPrivileged) {
-      return { ok: false, error: 'Video kontrolleri şu anda yalnızca yöneticiye açık.' };
-    }
 
     if (payload.action === 'host_lock') {
       if (!isPrivileged) {
-        return { ok: false, error: 'Bu ayarı yalnızca yönetici değiştirebilir.' };
+        return { ok: false, error: 'Bu ayarı yalnızca oda sahibi (Host) değiştirebilir.' };
       }
       room.video.hostOnlyControl = Boolean(payload.hostOnlyControl);
       room.video.updatedAt = Date.now();
       room.video.updatedBy = player.displayName;
-      return { ok: true, room, video: this.cloneEffectiveVideo(room.video) };
+      const updatedPlayers: PlayerState[] = [];
+      for (const p of room.players.values()) {
+        p.canControlVideo = this.canPlayerControlVideo(room, p.role, p.userId);
+        updatedPlayers.push(p);
+      }
+      return { ok: true, room, video: this.cloneEffectiveVideo(room.video), updatedPlayers };
+    }
+
+    if (!this.canPlayerControlVideo(room, player.role, player.userId)) {
+      return {
+        ok: false,
+        error: 'Video kontrol yetkiniz yok. Oda sahibi (Host) size yetki vermelidir.',
+      };
     }
 
     if (payload.action === 'load') {
@@ -619,6 +646,9 @@ export class RoomManager {
     if (!room) return { ok: false, error: 'Odada değilsiniz.' };
     const player = room.players.get(socketId);
     if (!player) return { ok: false, error: 'Oyuncu bulunamadı.' };
+    if (!this.canPlayerControlVideo(room, player.role, player.userId)) {
+      return { ok: false, error: 'Video ekleme yetkiniz yok. Host izin vermelidir.' };
+    }
 
     let finalUrl = input.url;
     let ytId: string | undefined;
@@ -702,7 +732,7 @@ export class RoomManager {
     if (!room) return null;
     const player = room.players.get(socketId);
     if (!player) return null;
-    if (room.video.hostOnlyControl && player.role === 'member') return null;
+    if (!this.canPlayerControlVideo(room, player.role, player.userId)) return null;
 
     const nextItem = room.queue.shift();
     if (!nextItem) return null;
@@ -832,7 +862,9 @@ export class RoomManager {
       | 'unmute_chat'
       | 'promote_mod'
       | 'demote_mod'
-      | 'transfer_owner',
+      | 'transfer_owner'
+      | 'allow_video'
+      | 'deny_video',
   ): {
     room: ActiveRoom;
     target: PlayerState;
@@ -872,21 +904,37 @@ export class RoomManager {
       room.mutedChatUserIds.add(target.userId);
     } else if (action === 'unmute_chat') {
       room.mutedChatUserIds.delete(target.userId);
+    } else if (action === 'allow_video') {
+      room.videoAllowedUserIds.add(target.userId);
+      room.videoDeniedUserIds.delete(target.userId);
+      target.canControlVideo = this.canPlayerControlVideo(room, target.role, target.userId);
+      updatedPlayers.push(target);
+    } else if (action === 'deny_video') {
+      room.videoAllowedUserIds.delete(target.userId);
+      room.videoDeniedUserIds.add(target.userId);
+      target.canControlVideo = this.canPlayerControlVideo(room, target.role, target.userId);
+      updatedPlayers.push(target);
     } else if (action === 'promote_mod' && isOwner) {
       room.moderators.add(target.userId);
       target.role = 'moderator';
+      target.canControlVideo = true;
       updatedPlayers.push(target);
     } else if (action === 'demote_mod' && isOwner) {
       room.moderators.delete(target.userId);
       target.role = 'member';
+      target.canControlVideo = this.canPlayerControlVideo(room, target.role, target.userId);
       updatedPlayers.push(target);
     } else if (action === 'transfer_owner' && isOwner) {
       actor.role = 'moderator';
       room.moderators.add(actor.userId);
+      actor.canControlVideo = true;
       target.role = 'owner';
-      room.summary.ownerId = target.userId;
-      room.summary.ownerName = target.displayName;
-      updateRoomOwner(room.summary.id, target.userId, target.displayName).catch(console.error);
+      target.canControlVideo = true;
+      if (!room.summary.id.startsWith('luma-')) {
+        room.summary.ownerId = target.userId;
+        room.summary.ownerName = target.displayName;
+        updateRoomOwner(room.summary.id, target.userId, target.displayName).catch(console.error);
+      }
       updatedPlayers.push(actor, target);
     }
 

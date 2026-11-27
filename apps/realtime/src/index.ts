@@ -243,6 +243,11 @@ export function createRealtimeServer(options?: {
         return;
       }
       io.to(res.room.summary.id).emit('video:synced', res.video);
+      if (res.updatedPlayers) {
+        for (const p of res.updatedPlayers) {
+          io.to(res.room.summary.id).emit('player:updated', p);
+        }
+      }
       ack?.({ ok: true });
     });
 

@@ -579,6 +579,19 @@ export default function RoomPage() {
 
   const use2DLite = graphicsQuality === '2d-lite' || !webglSupported;
   const isPrivileged = localPlayer?.role === 'owner' || localPlayer?.role === 'moderator';
+  const canControlVideo = localPlayer
+    ? (localPlayer.canControlVideo ?? (isPrivileged || !video?.hostOnlyControl))
+    : false;
+
+  const emitVideoControl = (payload: {
+    action: 'play' | 'pause' | 'seek' | 'rate';
+    currentTime?: number;
+    playbackRate?: number;
+  }) => {
+    socketRef.current?.emit('video:control', payload, (r) => {
+      if (!r.ok && r.error) showNotice(r.error);
+    });
+  };
 
   return (
     <div
@@ -612,6 +625,7 @@ export default function RoomPage() {
           screenVolume={screenVolume}
           interactiveScreen={interactiveScreen}
           suspended={theaterMode}
+          canControlVideo={canControlVideo}
           inputLocked={drawer !== 'none' || theaterMode}
           mobileInputRef={mobileInputRef}
           listenerTransformRef={listenerTransformRef}
@@ -623,6 +637,7 @@ export default function RoomPage() {
           onInteractSeat={handleInteractSeat}
           onClaimSeat={handleClaimSeat}
           onSelectRemotePlayer={(p) => setSelectedRemote(p)}
+          onPlayerSyncAction={emitVideoControl}
           onVideoEnded={() => socketRef.current?.emit('queue:next')}
         />
       )}
@@ -779,6 +794,31 @@ export default function RoomPage() {
                 ? 'Sesi Aç'
                 : 'Sustur'}
             </button>
+            {isPrivileged && selectedRemote.role === 'member' && (
+              <button
+                type="button"
+                onClick={() => {
+                  const nextAllow = !selectedRemote.canControlVideo;
+                  socketRef.current?.emit('mod:action', {
+                    targetPlayerId: selectedRemote.id,
+                    action: nextAllow ? 'allow_video' : 'deny_video',
+                  });
+                  setSelectedRemote({ ...selectedRemote, canControlVideo: nextAllow });
+                  showNotice(
+                    nextAllow
+                      ? `${selectedRemote.displayName} artık video açıp kontrol edebilir.`
+                      : `${selectedRemote.displayName} video kontrol yetkisi kaldırıldı.`,
+                  );
+                }}
+                className={`rounded-lg px-2.5 py-1.5 text-[11px] font-medium ${
+                  selectedRemote.canControlVideo
+                    ? 'bg-emerald-500/20 text-emerald-300'
+                    : 'bg-amber-500/20 text-amber-300'
+                }`}
+              >
+                {selectedRemote.canControlVideo ? 'Video İzni ✓' : 'Video İzni Ver'}
+              </button>
+            )}
             {user && !selectedRemote.userId.startsWith('guest-') && (
               <button
                 type="button"
@@ -909,24 +949,29 @@ export default function RoomPage() {
               <button
                 type="button"
                 onClick={() =>
-                  socketRef.current?.emit('video:control', {
+                  emitVideoControl({
                     action: video.isPlaying ? 'pause' : 'play',
                   })
                 }
-                className="rounded-xl bg-[#7C5CFF] p-2 text-white hover:bg-[#6D4AF5]"
+                className={`rounded-xl p-2 text-white transition ${
+                  canControlVideo
+                    ? 'bg-[#7C5CFF] hover:bg-[#6D4AF5]'
+                    : 'bg-white/10 text-zinc-400 hover:bg-white/15'
+                }`}
+                title={canControlVideo ? 'Oynat / Duraklat' : 'Sadece Host / Yetkililer kontrol edebilir'}
               >
                 {video.isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </button>
 
               {!video.isLive ? (
-                <div className="hidden items-center gap-2 sm:flex">
+                <div className="hidden items-center gap-1.5 sm:flex">
                   <span className="font-mono text-[11px] text-zinc-400">
                     {formatClock(displayTime)}
                   </span>
                   <button
                     type="button"
                     onClick={() =>
-                      socketRef.current?.emit('video:control', {
+                      emitVideoControl({
                         action: 'seek',
                         currentTime: Math.max(0, displayTime - 15),
                       })
@@ -938,7 +983,7 @@ export default function RoomPage() {
                   <button
                     type="button"
                     onClick={() =>
-                      socketRef.current?.emit('video:control', {
+                      emitVideoControl({
                         action: 'seek',
                         currentTime: displayTime + 15,
                       })
@@ -947,6 +992,25 @@ export default function RoomPage() {
                   >
                     +15s
                   </button>
+                  <select
+                    aria-label="Oynatma Hızı"
+                    value={video.playbackRate}
+                    disabled={!canControlVideo}
+                    onChange={(e) =>
+                      emitVideoControl({
+                        action: 'rate',
+                        playbackRate: Number(e.target.value),
+                      })
+                    }
+                    className="rounded-md border border-white/10 bg-[#090A0F] px-1.5 py-0.5 font-mono text-[10px] text-zinc-200 outline-none focus:border-[#7C5CFF] disabled:opacity-50"
+                    title="Oynatma Hızı (Tüm odada senkronize olur)"
+                  >
+                    {[0.5, 1, 1.25, 1.5, 2].map((r) => (
+                      <option key={r} value={r}>
+                        {r}x
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ) : (
                 <span className="flex items-center gap-1 rounded-md bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
@@ -1070,18 +1134,26 @@ export default function RoomPage() {
           screenVolume={screenVolume}
           micEnabled={micEnabled}
           localAudioLevel={localAudioLevel}
+          canControlVideo={canControlVideo}
           onChangeVolume={setScreenVolume}
           onTogglePlay={() =>
-            socketRef.current?.emit('video:control', {
+            emitVideoControl({
               action: video?.isPlaying ? 'pause' : 'play',
             })
           }
           onSeek={(targetSec) =>
-            socketRef.current?.emit('video:control', {
+            emitVideoControl({
               action: 'seek',
               currentTime: targetSec,
             })
           }
+          onChangeRate={(rate) =>
+            emitVideoControl({
+              action: 'rate',
+              playbackRate: rate,
+            })
+          }
+          onPlayerSyncAction={emitVideoControl}
           onNextQueue={() => socketRef.current?.emit('queue:next')}
           onVideoEnded={() => socketRef.current?.emit('queue:next')}
           onToggleMic={handleToggleMic}

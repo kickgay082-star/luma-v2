@@ -266,6 +266,7 @@ export interface PlayerState {
   isSpeaking: boolean;
   audioLevel: number; // 0 - 1
   mutedByMod: boolean;
+  canControlVideo?: boolean;
   avatar: AvatarConfig;
   connectedAt: number;
   latencyMs: number;

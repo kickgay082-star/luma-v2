@@ -6,6 +6,7 @@ export interface YTPlayerInstance {
   pauseVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   setPlaybackRate: (rate: number) => void;
+  getPlaybackRate?: () => number;
   getCurrentTime: () => number;
   getPlayerState: () => number;
   setVolume: (vol: number) => void;
@@ -28,6 +29,7 @@ declare global {
           events?: {
             onReady?: (e: { target: YTPlayerInstance }) => void;
             onStateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
+            onPlaybackRateChange?: (e: { data: number; target: YTPlayerInstance }) => void;
             onError?: (e: { data: number }) => void;
           };
         },

@@ -32,6 +32,7 @@ interface RoomCanvasSceneProps {
   screenVolume: number;
   interactiveScreen: boolean;
   suspended?: boolean;
+  canControlVideo?: boolean;
   inputLocked: boolean;
   mobileInputRef: MutableRefObject<MobileInputState>;
   listenerTransformRef: MutableRefObject<{
@@ -45,6 +46,11 @@ interface RoomCanvasSceneProps {
   onInteractSeat: (seat: SeatState | null) => void;
   onClaimSeat: (seatId: string) => void;
   onSelectRemotePlayer: (player: PlayerState) => void;
+  onPlayerSyncAction?: (payload: {
+    action: 'play' | 'pause' | 'seek' | 'rate';
+    currentTime?: number;
+    playbackRate?: number;
+  }) => void;
   onVideoEnded: () => void;
 }
 
@@ -61,6 +67,7 @@ export function RoomCanvasScene({
   screenVolume,
   interactiveScreen,
   suspended = false,
+  canControlVideo = true,
   inputLocked,
   mobileInputRef,
   listenerTransformRef,
@@ -70,6 +77,7 @@ export function RoomCanvasScene({
   onInteractSeat,
   onClaimSeat,
   onSelectRemotePlayer,
+  onPlayerSyncAction,
   onVideoEnded,
 }: RoomCanvasSceneProps) {
   const dpr: [number, number] =
@@ -96,6 +104,8 @@ export function RoomCanvasScene({
         screenVolume={screenVolume}
         interactiveScreen={interactiveScreen}
         suspended={suspended}
+        canControlVideo={canControlVideo}
+        onPlayerSyncAction={onPlayerSyncAction}
         onClaimSeat={onClaimSeat}
         onVideoEnded={onVideoEnded}
       />

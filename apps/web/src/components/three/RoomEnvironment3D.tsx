@@ -22,6 +22,12 @@ interface RoomEnvironment3DProps {
   screenVolume: number;
   interactiveScreen: boolean;
   suspended?: boolean;
+  canControlVideo?: boolean;
+  onPlayerSyncAction?: (payload: {
+    action: 'play' | 'pause' | 'seek' | 'rate';
+    currentTime?: number;
+    playbackRate?: number;
+  }) => void;
   onClaimSeat: (seatId: string) => void;
   onVideoEnded?: () => void;
 }
@@ -36,6 +42,8 @@ export function RoomEnvironment3D({
   screenVolume,
   interactiveScreen,
   suspended = false,
+  canControlVideo = true,
+  onPlayerSyncAction,
   onClaimSeat,
   onVideoEnded,
 }: RoomEnvironment3DProps) {
@@ -226,6 +234,8 @@ export function RoomEnvironment3D({
         screenVolume={screenVolume}
         interactiveHtml={interactiveScreen}
         suspended={suspended}
+        canControlVideo={canControlVideo}
+        onPlayerSyncAction={onPlayerSyncAction}
         onVideoEnded={onVideoEnded}
       />
 

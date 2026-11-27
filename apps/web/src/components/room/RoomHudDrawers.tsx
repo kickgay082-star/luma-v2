@@ -88,7 +88,9 @@ interface RoomHudDrawersProps {
       | 'unmute_chat'
       | 'promote_mod'
       | 'demote_mod'
-      | 'transfer_owner',
+      | 'transfer_owner'
+      | 'allow_video'
+      | 'deny_video',
   ) => void;
   onUpdateSpatialSettings: (patch: Partial<SpatialVoiceSettings>) => void;
   onUpdateGraphicsQuality: (q: GraphicsQuality) => void;
@@ -220,6 +222,9 @@ function MediaDrawerContent({
   const [iptvNotice, setIptvNotice] = useState<string | null>(null);
 
   const isPrivileged = localPlayer?.role === 'owner' || localPlayer?.role === 'moderator';
+  const canControlVideo = localPlayer
+    ? (localPlayer.canControlVideo ?? (isPrivileged || !video?.hostOnlyControl))
+    : false;
 
   const loadIptv = async () => {
     try {
@@ -359,19 +364,31 @@ function MediaDrawerContent({
 
       {isPrivileged && (
         <div className="flex items-center justify-between rounded-xl border border-white/[0.07] bg-[#090A0F] px-3 py-2 text-xs">
-          <span className="text-zinc-300">Yalnızca Yönetici Kontrolü</span>
+          <div>
+            <span className="text-zinc-200 font-medium">Genel Video Kontrolü</span>
+            <p className="text-[10px] text-zinc-500">
+              Katılımcılar sekmesinden kişi bazlı yetki de verebilirsin.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => onToggleHostLock(!video?.hostOnlyControl)}
-            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 font-medium ${
+            className={`flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 font-medium ${
               video?.hostOnlyControl
                 ? 'bg-amber-500/20 text-amber-300'
                 : 'bg-white/[0.06] text-zinc-300'
             }`}
           >
             {video?.hostOnlyControl ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-            <span>{video?.hostOnlyControl ? 'Kilitli' : 'Herkese Açık'}</span>
+            <span>{video?.hostOnlyControl ? 'Sadece Host & İzinliler' : 'Herkese Açık'}</span>
           </button>
+        </div>
+      )}
+
+      {!canControlVideo && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+          <span>Video açma ve kontrol yetkiniz kısıtlı. Oda sahibi (Host) size izin vermelidir.</span>
         </div>
       )}
 
@@ -884,6 +901,24 @@ function SocialDrawerContent({
 
                     {isPrivileged && (
                       <div className="flex flex-wrap gap-1.5">
+                        {p.role === 'member' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onModAction(
+                                p.id,
+                                p.canControlVideo ? 'deny_video' : 'allow_video',
+                              )
+                            }
+                            className={`rounded-md border px-2 py-0.5 text-[10px] font-medium transition ${
+                              p.canControlVideo
+                                ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
+                                : 'border-amber-500/35 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+                            }`}
+                          >
+                            {p.canControlVideo ? 'Video İzni: Açık' : 'Video İzni: Kapalı'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() =>
