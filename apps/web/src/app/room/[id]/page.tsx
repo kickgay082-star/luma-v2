@@ -568,16 +568,6 @@ export default function RoomPage() {
             >
               3D Salona Gir
             </button>
-
-            {!user && (
-              <p className="text-center text-xs text-zinc-500">
-                Kayıtlı avatarını kullanmak için{' '}
-                <Link href="/auth" className="text-[#7C5CFF] hover:underline">
-                  giriş yapabilirsin
-                </Link>
-                .
-              </p>
-            )}
           </form>
         </div>
       </div>

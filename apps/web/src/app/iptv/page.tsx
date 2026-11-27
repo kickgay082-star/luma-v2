@@ -196,13 +196,13 @@ export default function IptvPage() {
           <div className="rounded-2xl border border-white/10 bg-[#10121A] p-8 text-center">
             <Radio className="mx-auto h-8 w-8 text-[#7C5CFF]" />
             <p className="mt-3 text-sm font-medium text-white">
-              Kişisel IPTV listelerinizi ve favorilerinizi saklamak için giriş yapın.
+              Kişisel IPTV listelerinizi ve favorilerinizi saklamak için önce isminizi girin.
             </p>
             <Link
               href="/auth"
               className="mt-4 inline-block rounded-xl bg-[#7C5CFF] px-5 py-2.5 text-xs font-medium text-white"
             >
-              Giriş Yap / Hesap Oluştur
+              İsim Gir
             </Link>
           </div>
         ) : (

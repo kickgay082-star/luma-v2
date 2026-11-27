@@ -98,13 +98,13 @@ export function CreateRoomModal({ open, onClose }: CreateRoomModalProps) {
 
         {!user && (
           <div className="mt-4 flex items-center justify-between rounded-xl border border-[#7C5CFF]/30 bg-[#7C5CFF]/10 px-4 py-3 text-xs text-zinc-200">
-            <span>Kendi odanızı açmak için ücretsiz bir Luma hesabı oluşturun.</span>
+            <span>Kendi odanızı açmak için önce isminizi girin.</span>
             <button
               type="button"
               onClick={() => router.push('/auth')}
               className="rounded-lg bg-[#7C5CFF] px-3 py-1.5 font-medium text-white"
             >
-              Giriş / Kayıt
+              İsim Gir
             </button>
           </div>
         )}

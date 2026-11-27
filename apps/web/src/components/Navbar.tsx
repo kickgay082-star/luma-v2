@@ -99,16 +99,22 @@ export function Navbar({ onCreateRoomClick }: NavbarProps) {
 
           {user ? (
             <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#10121A] py-1 pl-2.5 pr-1.5">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#7C5CFF]/20 text-xs font-semibold text-[#C4B5FD]">
-                {user.displayName.slice(0, 1).toUpperCase()}
-              </div>
-              <span className="hidden text-xs font-medium text-zinc-200 sm:inline">
-                {user.displayName}
-              </span>
+              <Link
+                href="/auth"
+                title="İsmi Değiştir"
+                className="flex items-center gap-2 transition hover:opacity-80"
+              >
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#7C5CFF]/20 text-xs font-semibold text-[#C4B5FD]">
+                  {user.displayName.slice(0, 1).toUpperCase()}
+                </div>
+                <span className="hidden text-xs font-medium text-zinc-200 sm:inline">
+                  {user.displayName}
+                </span>
+              </Link>
               <button
                 type="button"
                 onClick={handleLogout}
-                title="Çıkış Yap"
+                title="İsmi Sıfırla"
                 className="rounded-md p-1.5 text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -120,7 +126,7 @@ export function Navbar({ onCreateRoomClick }: NavbarProps) {
               className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#12141E] px-3 py-2 text-sm font-medium text-zinc-200 transition hover:border-white/20 hover:bg-[#171A27]"
             >
               <LogIn className="h-4 w-4 text-zinc-400" />
-              <span>Giriş Yap</span>
+              <span>İsim Gir</span>
             </Link>
           )}
         </div>
