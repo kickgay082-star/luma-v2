@@ -138,6 +138,7 @@ export const roomCustomizationSchema = z.object({
   decorPreset: z.enum(['classic', 'minimal', 'lush']).optional(),
   ambientMusic: z.enum(['none', 'lofi-cinema', 'deep-ambient', 'synth-soft']).optional(),
   locked: z.boolean().optional(),
+  chatLocked: z.boolean().optional(),
   maxUsers: z.number().int().min(2).max(48).optional(),
   spatialVoiceMaxDistance: z.number().min(8).max(30).optional(),
   voiceAcoustics: z.enum(['studio', 'cinema-hall', 'intimate']).optional(),

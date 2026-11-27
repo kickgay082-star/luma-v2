@@ -10,7 +10,7 @@ import {
   DEFAULT_AVATAR_CONFIG,
   PlayerAnimState,
 } from '@luma/shared';
-import { ArrowRight, Check, RotateCcw, Save, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, Dices, RotateCcw, Save, Sparkles } from 'lucide-react';
 import { Navbar } from '@/components/Navbar';
 import { Avatar3D } from '@/components/three/Avatar3D';
 import { getEffectiveAvatar, useLumaStore } from '@/stores/useLumaStore';
@@ -223,14 +223,48 @@ export default function AvatarStudioPage() {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setConfig(DEFAULT_AVATAR_CONFIG)}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/[0.04]"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                <span>Sıfırla</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+                    setConfig({
+                      presetId: 'custom',
+                      bodyPreset: pick(['slim', 'standard', 'athletic', 'tall']),
+                      heightScale: Number((0.94 + Math.random() * 0.14).toFixed(2)),
+                      shoulderScale: Number((0.92 + Math.random() * 0.18).toFixed(2)),
+                      skinTone: pick(SKIN_TONES),
+                      hairStyle: pick(HAIR_STYLES).id,
+                      hairColor: pick(HAIR_COLORS),
+                      faceShape: pick(['oval', 'angular', 'soft', 'square']),
+                      eyeStyle: pick(['almond', 'round', 'focused', 'expressive']),
+                      eyeColor: pick(['#3B5998', '#1F6F78', '#4B3621', '#1E293B', '#7C5CFF']),
+                      eyebrowStyle: pick(['natural', 'arched', 'thick', 'minimal']),
+                      topStyle: pick(TOP_STYLES).id,
+                      topColor: pick(GARMENT_COLORS),
+                      bottomStyle: pick(BOTTOM_STYLES).id,
+                      bottomColor: pick(GARMENT_COLORS),
+                      shoeStyle: pick(SHOE_STYLES).id,
+                      shoeColor: pick(['#111827', '#E5E7EB', '#3B2820', '#7F1D1D', '#7C5CFF']),
+                      glasses: pick(GLASSES_STYLES).id,
+                      hat: pick(HAT_STYLES).id,
+                      accessoryColor: pick(ACCENT_COLORS),
+                    });
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#7C5CFF]/40 bg-[#7C5CFF]/15 px-3 py-1.5 text-xs font-medium text-[#C4B5FD] hover:bg-[#7C5CFF]/25"
+                >
+                  <Dices className="h-3.5 w-3.5" />
+                  <span>Rastgele Stil</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfig(DEFAULT_AVATAR_CONFIG)}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/[0.04]"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span>Sıfırla</span>
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 space-y-5">

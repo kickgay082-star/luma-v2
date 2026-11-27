@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
+  AdminActionType,
   IptvChannel,
   IptvPlaylist,
   PlayerState,
@@ -17,17 +18,20 @@ import {
   extractYouTubeId,
 } from '@luma/shared';
 import {
+  Armchair,
   Check,
   Crown,
   Heart,
   ListVideo,
   Lock,
+  Megaphone,
   Mic,
   MicOff,
   Pin,
   Play,
   Plus,
   Radio,
+  RotateCcw,
   Search,
   Send,
   Shield,
@@ -47,7 +51,7 @@ import {
 } from 'lucide-react';
 import { useLumaStore } from '@/stores/useLumaStore';
 
-export type ActiveDrawer = 'none' | 'media' | 'social' | 'customize' | 'settings';
+export type ActiveDrawer = 'none' | 'media' | 'social' | 'customize' | 'admin' | 'settings';
 
 interface RoomHudDrawersProps {
   drawer: ActiveDrawer;
@@ -60,6 +64,7 @@ interface RoomHudDrawersProps {
   screenShareName?: string | null;
   isLocalScreenSharer?: boolean;
   onToggleScreenShare?: () => void;
+  onOpenWebBrowser?: () => void;
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   onLoadVideo: (payload: {
@@ -88,6 +93,7 @@ interface RoomHudDrawersProps {
     targetPlayerId: string,
     action:
       | 'kick'
+      | 'kick_seat'
       | 'mute_voice'
       | 'unmute_voice'
       | 'mute_chat'
@@ -98,6 +104,7 @@ interface RoomHudDrawersProps {
       | 'allow_video'
       | 'deny_video',
   ) => void;
+  onAdminAction?: (action: AdminActionType, message?: string) => void;
   onUpdateSpatialSettings: (patch: Partial<SpatialVoiceSettings>) => void;
   onUpdateGraphicsQuality: (q: GraphicsQuality) => void;
 }
@@ -115,6 +122,7 @@ export function RoomHudDrawers({
   screenShareName = null,
   isLocalScreenSharer = false,
   onToggleScreenShare,
+  onOpenWebBrowser,
   queue,
   chatHistory,
   onLoadVideo,
@@ -128,6 +136,7 @@ export function RoomHudDrawers({
   onDeleteChat,
   onCustomizeRoom,
   onModAction,
+  onAdminAction,
   onUpdateSpatialSettings,
   onUpdateGraphicsQuality,
 }: RoomHudDrawersProps) {
@@ -138,12 +147,14 @@ export function RoomHudDrawers({
       <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
         <span className="text-sm font-semibold text-white">
           {drawer === 'media'
-            ? 'Medya, YouTube & IPTV'
+            ? 'Medya, Web Tarayıcı & IPTV'
             : drawer === 'social'
               ? `Sohbet & Katılımcılar (${players.length})`
               : drawer === 'customize'
                 ? 'Oda Özelleştirme'
-                : 'Ses & Grafik Ayarları'}
+                : drawer === 'admin'
+                  ? 'Admin / Host Kontrol Merkezi'
+                  : 'Ses & Grafik Ayarları'}
         </span>
         <button
           type="button"
@@ -163,6 +174,7 @@ export function RoomHudDrawers({
             screenShareName={screenShareName}
             isLocalScreenSharer={isLocalScreenSharer}
             onToggleScreenShare={onToggleScreenShare}
+            onOpenWebBrowser={onOpenWebBrowser}
             queue={queue}
             onLoadVideo={onLoadVideo}
             onAddQueue={onAddQueue}
@@ -192,6 +204,18 @@ export function RoomHudDrawers({
           />
         )}
 
+        {drawer === 'admin' && (
+          <AdminDrawerContent
+            localPlayer={localPlayer}
+            players={players}
+            customization={customization}
+            video={video}
+            onCustomizeRoom={onCustomizeRoom}
+            onModAction={onModAction}
+            onAdminAction={onAdminAction}
+          />
+        )}
+
         {drawer === 'settings' && (
           <SettingsDrawerContent
             onUpdateSpatialSettings={onUpdateSpatialSettings}
@@ -210,6 +234,7 @@ function MediaDrawerContent({
   screenShareName = null,
   isLocalScreenSharer = false,
   onToggleScreenShare,
+  onOpenWebBrowser,
   queue,
   onLoadVideo,
   onAddQueue,
@@ -223,6 +248,7 @@ function MediaDrawerContent({
   screenShareName?: string | null;
   isLocalScreenSharer?: boolean;
   onToggleScreenShare?: () => void;
+  onOpenWebBrowser?: () => void;
   queue: QueueItem[];
   onLoadVideo: RoomHudDrawersProps['onLoadVideo'];
   onAddQueue: RoomHudDrawersProps['onAddQueue'];
@@ -615,40 +641,37 @@ function MediaDrawerContent({
             </div>
           )}
 
-          {/* Watch2Gether Style Live Browser Tab / Screen Share */}
-          {onToggleScreenShare && (
-            <div className="rounded-xl border border-blue-500/25 bg-blue-500/[0.07] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
-                    <MonitorUp className="h-3.5 w-3.5 text-blue-400" />
-                    Tarayıcı / Sekme Yayını
-                  </p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
-                    Film sitesini veya korumalı sayfayı kendi sekmende aç, videoya tıkla ve bu sekmeyi sesle canlı izlet.
-                  </p>
-                </div>
-              </div>
+          {/* In-App Co-Browser (No Screen Share Required) */}
+          {onOpenWebBrowser && (
+            <div className="rounded-xl border border-[#7C5CFF]/30 bg-[#7C5CFF]/[0.08] p-3">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                <Globe className="h-3.5 w-3.5 text-[#A78BFA]" />
+                Site İçi Tarayıcı (Ekran Paylaşmadan İzlet)
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                Film/dizi sitesine uygulama içinden gir, sayfayı kaydır ve seçtiğin videoyu tek tıkla 3D perdeye ver.
+              </p>
               <button
                 type="button"
-                disabled={!canControlVideo && !isLocalScreenSharer}
-                onClick={onToggleScreenShare}
-                className={`mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium transition ${
-                  isLocalScreenSharer
-                    ? 'bg-red-500/80 text-white hover:bg-red-500'
-                    : 'bg-[#3B82F6] text-white hover:bg-[#2563EB]'
-                } disabled:opacity-45`}
+                disabled={!canControlVideo}
+                onClick={onOpenWebBrowser}
+                className="mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#7C5CFF] py-2 text-xs font-medium text-white transition hover:bg-[#6D4AF5] disabled:opacity-45"
               >
-                <MonitorUp className="h-3.5 w-3.5" />
-                <span>
-                  {isLocalScreenSharer
-                    ? 'Sekme Paylaşımını Durdur'
-                    : screenShareActive
-                      ? `Şu an ${screenShareName || 'biri'} paylaşıyor — Değiştir`
-                      : 'Sekme / Ekran Paylaş'}
-                </span>
+                <Globe className="h-3.5 w-3.5" />
+                <span>Site İçi Tarayıcıyı Aç</span>
               </button>
             </div>
+          )}
+
+          {isLocalScreenSharer && onToggleScreenShare && (
+            <button
+              type="button"
+              onClick={onToggleScreenShare}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-red-500/80 py-2 text-xs font-medium text-white hover:bg-red-500"
+            >
+              <MonitorUp className="h-3.5 w-3.5" />
+              <span>Aktif Ekran Yayınını Durdur ({screenShareActive ? screenShareName || 'Aktif' : ''})</span>
+            </button>
           )}
         </div>
       )}
@@ -1125,6 +1148,15 @@ function SocialDrawerContent({
                         >
                           {p.mutedByMod ? 'Sesi Aç' : 'Mikrofonu Kilitle'}
                         </button>
+                        {p.seatedSeatId && (
+                          <button
+                            type="button"
+                            onClick={() => onModAction(p.id, 'kick_seat')}
+                            className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-zinc-300 hover:bg-white/10"
+                          >
+                            <Armchair className="h-3 w-3" /> Kaldır
+                          </button>
+                        )}
                         {localPlayer?.role === 'owner' && (
                           <>
                             <button
@@ -1501,6 +1533,274 @@ function SettingsDrawerContent({
           onChange={(e) => onUpdateSpatialSettings({ maxDistance: Number(e.target.value) })}
           className="w-full accent-[#7C5CFF]"
         />
+      </div>
+    </div>
+  );
+}
+
+function AdminDrawerContent({
+  localPlayer,
+  players,
+  customization,
+  video,
+  onCustomizeRoom,
+  onModAction,
+  onAdminAction,
+}: {
+  localPlayer: PlayerState | null;
+  players: PlayerState[];
+  customization: RoomCustomization;
+  video: VideoState | null;
+  onCustomizeRoom: RoomHudDrawersProps['onCustomizeRoom'];
+  onModAction: RoomHudDrawersProps['onModAction'];
+  onAdminAction?: RoomHudDrawersProps['onAdminAction'];
+}) {
+  const [announceText, setAnnounceText] = useState('');
+  const isOwner = localPlayer?.role === 'owner';
+  const isPrivileged = isOwner || localPlayer?.role === 'moderator';
+
+  if (!isPrivileged) {
+    return (
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-200">
+        Bu panel sadece Oda Sahibi (Host) ve Moderatörler içindir.
+      </div>
+    );
+  }
+
+  const sendAnnouncement = (e: React.FormEvent) => {
+    e.preventDefault();
+    const msg = announceText.trim();
+    if (!msg || !onAdminAction) return;
+    onAdminAction('announce', msg);
+    setAnnounceText('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-200">
+          <Crown className="h-3.5 w-3.5 text-amber-400" />
+          <span>{isOwner ? 'Tam Host Yetkisi Aktif' : 'Moderatör Yetkisi Aktif'}</span>
+        </p>
+        <p className="mt-1 text-[11px] text-zinc-300">
+          Odadaki ses, sohbet, koltuk, perde kontrolü ve tüm katılımcılar üzerinde tam yetkiye sahipsiniz.
+        </p>
+      </div>
+
+      {/* Room-Wide Announcement */}
+      <form onSubmit={sendAnnouncement} className="space-y-2 rounded-xl border border-white/10 bg-[#090A0F] p-3">
+        <label className="flex items-center gap-1.5 text-xs font-medium text-zinc-200">
+          <Megaphone className="h-3.5 w-3.5 text-[#7C5CFF]" />
+          <span>Tüm Odaya Sistem Duyurusu Gönder</span>
+        </label>
+        <div className="flex gap-2">
+          <input
+            value={announceText}
+            onChange={(e) => setAnnounceText(e.target.value)}
+            maxLength={160}
+            placeholder="Örn: Birazdan film başlıyor!"
+            className="flex-1 rounded-xl border border-white/10 bg-[#12141E] px-3 py-2 text-xs text-white outline-none focus:border-[#7C5CFF]"
+          />
+          <button
+            type="submit"
+            disabled={!announceText.trim()}
+            className="rounded-xl bg-[#7C5CFF] px-3 py-2 text-xs font-medium text-white hover:bg-[#6D4AF5] disabled:opacity-45"
+          >
+            Yayınla
+          </button>
+        </div>
+      </form>
+
+      {/* Global Room Toggles & Actions */}
+      <div className="space-y-2 rounded-xl border border-white/10 bg-[#090A0F] p-3">
+        <p className="text-xs font-semibold text-zinc-200">Hızlı Oda Kontrolleri</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('mute_all_voice')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-[11px] font-medium text-red-200 hover:bg-red-500/20"
+          >
+            <MicOff className="h-3.5 w-3.5" /> Herkesi Sustur
+          </button>
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('unmute_all_voice')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20"
+          >
+            <Mic className="h-3.5 w-3.5" /> Tüm Sesleri Aç
+          </button>
+
+          <button
+            type="button"
+            onClick={() =>
+              onAdminAction?.(customization.chatLocked ? 'unlock_chat' : 'lock_chat')
+            }
+            className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2 text-[11px] font-medium ${
+              customization.chatLocked
+                ? 'border-amber-500/35 bg-amber-500/15 text-amber-200'
+                : 'border-white/10 bg-[#12141E] text-zinc-200 hover:bg-white/10'
+            }`}
+          >
+            {customization.chatLocked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            {customization.chatLocked ? 'Sohbet Kilidini Aç' : 'Sohbeti Kilitle'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('clear_chat')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#12141E] px-2.5 py-2 text-[11px] font-medium text-zinc-200 hover:bg-white/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Sohbeti Temizle
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('allow_all_video')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#12141E] px-2.5 py-2 text-[11px] font-medium text-emerald-300 hover:bg-emerald-500/15"
+          >
+            <Unlock className="h-3.5 w-3.5" /> Video Kontrolünü Aç
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('deny_all_video')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#12141E] px-2.5 py-2 text-[11px] font-medium text-amber-300 hover:bg-amber-500/15"
+          >
+            <Lock className="h-3.5 w-3.5" /> Sadece Host Video
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('eject_all_seats')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-[#12141E] px-2.5 py-2 text-[11px] font-medium text-zinc-200 hover:bg-white/10"
+          >
+            <Armchair className="h-3.5 w-3.5" /> Koltukları Boşalt
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onAdminAction?.('reset_video')}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-red-500/25 bg-red-500/10 px-2.5 py-2 text-[11px] font-medium text-red-200 hover:bg-red-500/20"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Perdeyi Sıfırla
+          </button>
+        </div>
+
+        <label className="mt-2 flex items-center justify-between rounded-xl border border-white/[0.07] bg-[#12141E] px-3 py-2 text-xs text-zinc-200">
+          <span>Odaya Yeni Girişi Kilitle ({customization.locked ? 'Kilitli' : 'Açık'})</span>
+          <input
+            type="checkbox"
+            checked={Boolean(customization.locked)}
+            onChange={(e) => onCustomizeRoom({ locked: e.target.checked })}
+            className="h-4 w-4 accent-[#7C5CFF]"
+          />
+        </label>
+
+        {video?.url && (
+          <p className="truncate text-[10px] text-zinc-400">
+            Şu an oynayan: <span className="text-zinc-200">{video.title}</span>
+          </p>
+        )}
+      </div>
+
+      {/* Per-User Full Control Matrix */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-zinc-200">
+          Kullanıcı Yetki Yönetimi ({players.length})
+        </p>
+        {players.map((p) => {
+          const isSelf = p.id === localPlayer?.id;
+          return (
+            <div
+              key={p.id}
+              className="rounded-xl border border-white/[0.08] bg-[#090A0F] p-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-white">{p.displayName}</span>
+                  {p.role === 'owner' && <Crown className="h-3.5 w-3.5 text-amber-400" />}
+                  {p.role === 'moderator' && <Shield className="h-3.5 w-3.5 text-[#7C5CFF]" />}
+                </div>
+                <span className="text-[10px] text-zinc-400">
+                  {p.seatedSeatId ? 'Oturuyor' : 'Ayakta'}
+                </span>
+              </div>
+
+              {!isSelf && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onModAction(p.id, p.canControlVideo ? 'deny_video' : 'allow_video')}
+                    className={`rounded-md border px-2 py-1 text-[10px] font-medium ${
+                      p.canControlVideo
+                        ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                        : 'border-amber-500/35 bg-amber-500/15 text-amber-300'
+                    }`}
+                  >
+                    {p.canControlVideo ? 'Video İzni: Açık' : 'Video İzni: Kapalı'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onModAction(p.id, p.mutedByMod ? 'unmute_voice' : 'mute_voice')}
+                    className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-200 hover:bg-white/10"
+                  >
+                    {p.mutedByMod ? 'Mikrofonu Aç' : 'Mikrofonu Kilitle'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onModAction(p.id, 'mute_chat')}
+                    className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-200 hover:bg-white/10"
+                  >
+                    Sohbet Sustur
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onModAction(p.id, 'unmute_chat')}
+                    className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-200 hover:bg-white/10"
+                  >
+                    Sohbeti Aç
+                  </button>
+                  {p.seatedSeatId && (
+                    <button
+                      type="button"
+                      onClick={() => onModAction(p.id, 'kick_seat')}
+                      className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-zinc-200 hover:bg-white/10"
+                    >
+                      Koltuktan Kaldır
+                    </button>
+                  )}
+                  {isOwner && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onModAction(p.id, p.role === 'moderator' ? 'demote_mod' : 'promote_mod')
+                        }
+                        className="rounded-md border border-[#7C5CFF]/35 px-2 py-1 text-[10px] text-[#C4B5FD] hover:bg-[#7C5CFF]/15"
+                      >
+                        {p.role === 'moderator' ? 'Modu Al' : 'Mod Yap'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onModAction(p.id, 'transfer_owner')}
+                        className="rounded-md border border-amber-500/35 px-2 py-1 text-[10px] text-amber-300 hover:bg-amber-500/15"
+                      >
+                        Host Devret
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onModAction(p.id, 'kick')}
+                    className="flex items-center gap-1 rounded-md border border-red-500/35 px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/15"
+                  >
+                    <Ban className="h-3 w-3" /> Odadan At
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

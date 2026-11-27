@@ -410,6 +410,45 @@ export function createRealtimeServer(options?: {
       for (const updated of res.updatedPlayers) {
         io.to(res.room.summary.id).emit('player:updated', updated);
       }
+      if (res.seatsChanged) {
+        io.to(res.room.summary.id).emit('seats:synced', res.room.seats);
+      }
+    });
+
+    socket.on('admin:action', (payload, ack) => {
+      const res = roomManager.handleAdminAction(socket.id, payload.action, payload.message);
+      if (!res.ok) {
+        ack?.({ ok: false, error: res.error });
+        return;
+      }
+      const roomId = res.room.summary.id;
+      if (res.updatedPlayers) {
+        for (const p of res.updatedPlayers) {
+          io.to(roomId).emit('player:updated', p);
+        }
+      }
+      if (res.seatsChanged) {
+        io.to(roomId).emit('seats:synced', res.room.seats);
+      }
+      if (res.videoChanged) {
+        io.to(roomId).emit('video:synced', res.room.video);
+      }
+      if (res.chatCleared) {
+        io.to(roomId).emit('chat:cleared');
+      }
+      if (res.customChanged) {
+        io.to(roomId).emit('room:customized', {
+          customization: res.room.customization,
+          seats: res.room.seats,
+        });
+      }
+      if (res.noticeMessage) {
+        io.to(roomId).emit('room:notice', {
+          level: 'info',
+          message: res.noticeMessage,
+        });
+      }
+      ack?.({ ok: true });
     });
 
     const handleDisconnect = () => {

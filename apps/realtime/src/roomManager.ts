@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
 import {
+  AdminActionType,
   AvatarConfig,
   avatarConfigSchema,
   buildRoomGeometry,
   ChatMessage,
-  DEFAULT_AVATAR_CONFIG,
   DEFAULT_ROOM_CUSTOMIZATION,
   extractYouTubeId,
   getFloorElevationAt,
+  pickDiverseAvatarPreset,
   PlayerRole,
   PlayerState,
   PlayerTransformUpdate,
@@ -235,7 +236,9 @@ export class RoomManager {
       audioLevel: 0,
       mutedByMod: room.mutedVoiceUserIds.has(params.userId),
       canControlVideo: this.canPlayerControlVideo(room, role, params.userId),
-      avatar: validatedAvatar?.success ? validatedAvatar.data : DEFAULT_AVATAR_CONFIG,
+      avatar: validatedAvatar?.success
+        ? validatedAvatar.data
+        : pickDiverseAvatarPreset(params.userId || params.displayName),
       connectedAt: Date.now(),
       latencyMs: 0,
       status: 'active',
@@ -808,6 +811,9 @@ export class RoomManager {
     if (room.mutedChatUserIds.has(player.userId)) {
       return { ok: false, error: 'Bu odada sohbet yazma yetkiniz kısıtlandı.' };
     }
+    if (room.customization.chatLocked && player.role === 'member') {
+      return { ok: false, error: 'Sohbet şu anda yönetici tarafından kilitlendi.' };
+    }
 
     const content = sanitizeText(rawContent, 420);
     if (!content) return { ok: false, error: 'Boş mesaj gönderilemez.' };
@@ -897,6 +903,7 @@ export class RoomManager {
     targetPlayerId: string,
     action:
       | 'kick'
+      | 'kick_seat'
       | 'mute_voice'
       | 'unmute_voice'
       | 'mute_chat'
@@ -910,6 +917,7 @@ export class RoomManager {
     room: ActiveRoom;
     target: PlayerState;
     kicked?: boolean;
+    seatsChanged?: boolean;
     updatedPlayers: PlayerState[];
   } | null {
     const room = this.getRoomBySocket(socketId);
@@ -924,13 +932,21 @@ export class RoomManager {
     if (!isOwner && target.role !== 'member') return null;
 
     const updatedPlayers: PlayerState[] = [];
+    let seatsChanged = false;
 
     if (action === 'kick') {
       room.bannedUserIds.add(target.userId);
       this.leaveRoom(target.id);
       return { room, target, kicked: true, updatedPlayers };
     }
-    if (action === 'mute_voice') {
+    if (action === 'kick_seat') {
+      if (this.releasePlayerSeat(room, target.id)) {
+        seatsChanged = true;
+      }
+      target.seatedSeatId = null;
+      target.animState = 'idle';
+      updatedPlayers.push(target);
+    } else if (action === 'mute_voice') {
       room.mutedVoiceUserIds.add(target.userId);
       target.mutedByMod = true;
       target.micEnabled = false;
@@ -979,7 +995,140 @@ export class RoomManager {
       updatedPlayers.push(actor, target);
     }
 
-    return { room, target, updatedPlayers };
+    return { room, target, seatsChanged, updatedPlayers };
+  }
+
+  handleAdminAction(
+    socketId: string,
+    action: AdminActionType,
+    rawMessage?: string,
+  ):
+    | {
+        ok: true;
+        room: ActiveRoom;
+        updatedPlayers?: PlayerState[];
+        seatsChanged?: boolean;
+        videoChanged?: boolean;
+        chatCleared?: boolean;
+        customChanged?: boolean;
+        noticeMessage?: string;
+      }
+    | { ok: false; error: string } {
+    const room = this.getRoomBySocket(socketId);
+    if (!room) return { ok: false, error: 'Odada değilsiniz.' };
+    const actor = room.players.get(socketId);
+    if (!actor || (actor.role !== 'owner' && actor.role !== 'moderator')) {
+      return { ok: false, error: 'Bu işlem için yönetici (Admin) yetkisi gereklidir.' };
+    }
+
+    const updatedPlayers: PlayerState[] = [];
+    let seatsChanged = false;
+    let videoChanged = false;
+    let chatCleared = false;
+    let customChanged = false;
+    let noticeMessage: string | undefined;
+
+    if (action === 'mute_all_voice') {
+      for (const p of room.players.values()) {
+        if (p.role === 'member') {
+          room.mutedVoiceUserIds.add(p.userId);
+          p.mutedByMod = true;
+          p.micEnabled = false;
+          p.isSpeaking = false;
+          p.audioLevel = 0;
+          updatedPlayers.push(p);
+        }
+      }
+      noticeMessage = 'Yönetici tüm üyelerin mikrofonlarını kapattı.';
+    } else if (action === 'unmute_all_voice') {
+      room.mutedVoiceUserIds.clear();
+      for (const p of room.players.values()) {
+        if (p.mutedByMod) {
+          p.mutedByMod = false;
+          updatedPlayers.push(p);
+        }
+      }
+      noticeMessage = 'Tüm mikrofon kilitleri kaldırıldı.';
+    } else if (action === 'clear_chat') {
+      room.chatHistory = [];
+      chatCleared = true;
+      noticeMessage = 'Sohbet geçmişi yönetici tarafından temizlendi.';
+    } else if (action === 'eject_all_seats') {
+      for (const s of room.seats) {
+        if (s.occupiedBy) {
+          s.occupiedBy = null;
+          s.occupiedByName = null;
+          seatsChanged = true;
+        }
+      }
+      for (const p of room.players.values()) {
+        if (p.seatedSeatId) {
+          p.seatedSeatId = null;
+          p.animState = 'idle';
+          updatedPlayers.push(p);
+        }
+      }
+      noticeMessage = 'Yönetici tüm koltukları boşalttı.';
+    } else if (action === 'allow_all_video') {
+      room.video.hostOnlyControl = false;
+      room.videoDeniedUserIds.clear();
+      videoChanged = true;
+      for (const p of room.players.values()) {
+        p.canControlVideo = true;
+        updatedPlayers.push(p);
+      }
+      noticeMessage = 'Herkes video açıp kontrol edebilir.';
+    } else if (action === 'deny_all_video') {
+      room.video.hostOnlyControl = true;
+      room.videoAllowedUserIds.clear();
+      videoChanged = true;
+      for (const p of room.players.values()) {
+        p.canControlVideo = this.canPlayerControlVideo(room, p.role, p.userId);
+        updatedPlayers.push(p);
+      }
+      noticeMessage = 'Video kontrolü yalnızca Admin/Host yetkisine alındı.';
+    } else if (action === 'lock_chat' || action === 'unlock_chat') {
+      room.customization.chatLocked = action === 'lock_chat';
+      customChanged = true;
+      saveRoomCustomization(room.summary.id, room.customization).catch(console.error);
+      noticeMessage =
+        action === 'lock_chat'
+          ? 'Sohbet yalnızca yöneticilere açık olacak şekilde kilitlendi.'
+          : 'Sohbet herkese açıldı.';
+    } else if (action === 'reset_video') {
+      room.video = {
+        ...room.video,
+        sourceType: null,
+        url: null,
+        youtubeId: null,
+        title: 'İçerik Seçilmedi',
+        channelLogo: null,
+        isLive: false,
+        isPlaying: false,
+        currentTime: 0,
+        playbackRate: 1,
+        updatedAt: Date.now(),
+        updatedBy: actor.displayName,
+      };
+      room.summary.currentlyPlaying = null;
+      videoChanged = true;
+      noticeMessage = 'Perde yönetici tarafından temizlendi.';
+    } else if (action === 'announce') {
+      const clean = sanitizeText(rawMessage || '', 180);
+      if (!clean) return { ok: false, error: 'Duyuru metni boş olamaz.' };
+      noticeMessage = `📢 ${actor.displayName}: ${clean}`;
+    }
+
+    return {
+      ok: true,
+      room,
+      updatedPlayers,
+      seatsChanged,
+      videoChanged,
+      chatCleared,
+      customChanged,
+      noticeMessage,
+    };
   }
 
   buildSnapshot(room: ActiveRoom): RoomStateSnapshot {

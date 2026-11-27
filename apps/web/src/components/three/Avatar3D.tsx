@@ -220,23 +220,77 @@ export function Avatar3D({
             <meshStandardMaterial color={config.topColor} roughness={0.68} />
           </mesh>
 
+          {/* Waist belt & subtle buckle */}
+          <mesh position={[0, 0.015, 0]}>
+            <boxGeometry args={[0.43 * bodyMetrics.s, 0.045, 0.25]} />
+            <meshStandardMaterial color="#18181B" roughness={0.55} />
+          </mesh>
+          <mesh position={[0, 0.015, 0.13]}>
+            <boxGeometry args={[0.06, 0.04, 0.015]} />
+            <meshStandardMaterial color={config.accessoryColor} metalness={0.65} roughness={0.3} />
+          </mesh>
+
           {/* Outfit style details */}
           {config.topStyle === 'hoodie' && (
-            <group position={[0, 0.44, -0.09]}>
-              <mesh castShadow>
-                <torusGeometry args={[0.14, 0.055, 10, 20, Math.PI * 1.4]} />
-                <meshStandardMaterial color={config.topColor} roughness={0.8} />
+            <group>
+              <group position={[0, 0.44, -0.09]}>
+                <mesh castShadow>
+                  <torusGeometry args={[0.14, 0.055, 10, 20, Math.PI * 1.4]} />
+                  <meshStandardMaterial color={config.topColor} roughness={0.8} />
+                </mesh>
+              </group>
+              {/* Hoodie drawstrings & kangaroo pocket */}
+              <mesh position={[-0.045, 0.34, 0.125]}>
+                <boxGeometry args={[0.012, 0.14, 0.012]} />
+                <meshStandardMaterial color={config.accessoryColor} roughness={0.6} />
+              </mesh>
+              <mesh position={[0.045, 0.34, 0.125]}>
+                <boxGeometry args={[0.012, 0.14, 0.012]} />
+                <meshStandardMaterial color={config.accessoryColor} roughness={0.6} />
+              </mesh>
+              <mesh position={[0, 0.12, 0.124]}>
+                <boxGeometry args={[0.25 * bodyMetrics.s, 0.13, 0.016]} />
+                <meshStandardMaterial color={config.topColor} roughness={0.82} />
+              </mesh>
+            </group>
+          )}
+          {config.topStyle === 'sweater' && (
+            <group>
+              <mesh position={[0, 0.47, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.1, 0.028, 8, 18]} />
+                <meshStandardMaterial color={config.accessoryColor} roughness={0.75} />
+              </mesh>
+              <mesh position={[0, 0.045, 0]}>
+                <boxGeometry args={[0.428 * bodyMetrics.s, 0.05, 0.248]} />
+                <meshStandardMaterial color={config.accessoryColor} roughness={0.8} />
               </mesh>
             </group>
           )}
           {(config.topStyle === 'blazer' || config.topStyle === 'jacket') && (
-            <mesh position={[0, 0.25, 0.125]}>
-              <boxGeometry args={[0.1, 0.42, 0.015]} />
-              <meshStandardMaterial
-                color={config.topStyle === 'blazer' ? '#E5E7EB' : '#111827'}
-                roughness={0.5}
-              />
-            </mesh>
+            <group>
+              <mesh position={[0, 0.25, 0.125]}>
+                <boxGeometry args={[0.1, 0.42, 0.015]} />
+                <meshStandardMaterial
+                  color={config.topStyle === 'blazer' ? '#E5E7EB' : '#111827'}
+                  roughness={0.5}
+                />
+              </mesh>
+              {/* Lapel / collar trim */}
+              <mesh position={[-0.075, 0.41, 0.126]} rotation={[0, 0, -0.24]}>
+                <boxGeometry args={[0.05, 0.15, 0.014]} />
+                <meshStandardMaterial
+                  color={config.topStyle === 'blazer' ? '#1E293B' : config.accessoryColor}
+                  roughness={0.45}
+                />
+              </mesh>
+              <mesh position={[0.075, 0.41, 0.126]} rotation={[0, 0, 0.24]}>
+                <boxGeometry args={[0.05, 0.15, 0.014]} />
+                <meshStandardMaterial
+                  color={config.topStyle === 'blazer' ? '#1E293B' : config.accessoryColor}
+                  roughness={0.45}
+                />
+              </mesh>
+            </group>
           )}
 
           {/* Neck */}
@@ -382,6 +436,12 @@ export function Avatar3D({
               />
               <meshStandardMaterial color={config.shoeColor} roughness={0.55} />
             </mesh>
+            {config.shoeStyle === 'sneakers' && (
+              <mesh position={[0, -0.415, 0.045]}>
+                <boxGeometry args={[0.114, 0.022, 0.224]} />
+                <meshStandardMaterial color="#F8FAFC" roughness={0.45} />
+              </mesh>
+            )}
           </group>
         </group>
 
@@ -409,6 +469,12 @@ export function Avatar3D({
               />
               <meshStandardMaterial color={config.shoeColor} roughness={0.55} />
             </mesh>
+            {config.shoeStyle === 'sneakers' && (
+              <mesh position={[0, -0.415, 0.045]}>
+                <boxGeometry args={[0.114, 0.022, 0.224]} />
+                <meshStandardMaterial color="#F8FAFC" roughness={0.45} />
+              </mesh>
+            )}
           </group>
         </group>
       </group>
@@ -491,6 +557,14 @@ function AvatarHair({ style, color }: { style: AvatarConfig['hairStyle']; color:
           <boxGeometry args={[0.32, 0.34, 0.16]} />
           <meshStandardMaterial color={color} roughness={0.74} />
         </mesh>
+        <mesh position={[-0.145, -0.08, 0.03]}>
+          <capsuleGeometry args={[0.045, 0.2, 6, 8]} />
+          <meshStandardMaterial color={color} roughness={0.74} />
+        </mesh>
+        <mesh position={[0.145, -0.08, 0.03]}>
+          <capsuleGeometry args={[0.045, 0.2, 6, 8]} />
+          <meshStandardMaterial color={color} roughness={0.74} />
+        </mesh>
       </group>
     );
   }
@@ -515,6 +589,10 @@ function AvatarHair({ style, color }: { style: AvatarConfig['hairStyle']; color:
           <sphereGeometry args={[0.184, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.6]} />
           <meshStandardMaterial color={color} roughness={0.74} />
         </mesh>
+        <mesh position={[0, 0.08, -0.175]} rotation={[0.45, 0, 0]}>
+          <torusGeometry args={[0.045, 0.014, 8, 14]} />
+          <meshStandardMaterial color="#EC4899" roughness={0.5} />
+        </mesh>
         <mesh position={[0, 0.02, -0.22]} rotation={[0.45, 0, 0]}>
           <capsuleGeometry args={[0.055, 0.22, 6, 10]} />
           <meshStandardMaterial color={color} roughness={0.74} />
@@ -532,6 +610,8 @@ function AvatarHair({ style, color }: { style: AvatarConfig['hairStyle']; color:
           [-0.12, 0.02, -0.06],
           [0.12, 0.02, -0.06],
           [0, 0.06, -0.11],
+          [-0.06, 0.12, 0.06],
+          [0.06, 0.12, 0.06],
         ].map((pos, idx) => (
           <mesh key={idx} position={pos as [number, number, number]}>
             <sphereGeometry args={[0.095, 10, 10]} />
@@ -541,12 +621,20 @@ function AvatarHair({ style, color }: { style: AvatarConfig['hairStyle']; color:
       </group>
     );
   }
-  // mohawk
+  // mohawk (layered fin segments)
   return (
-    <mesh position={[0, 0.16, -0.01]}>
-      <boxGeometry args={[0.065, 0.14, 0.28]} />
-      <meshStandardMaterial color={color} roughness={0.7} />
-    </mesh>
+    <group position={[0, 0.16, -0.01]}>
+      <mesh>
+        <boxGeometry args={[0.065, 0.14, 0.28]} />
+        <meshStandardMaterial color={color} roughness={0.7} />
+      </mesh>
+      {[-0.08, 0, 0.08].map((zOff, i) => (
+        <mesh key={i} position={[0, 0.07, zOff]} rotation={[-0.15, 0, 0]}>
+          <coneGeometry args={[0.04, 0.09, 6]} />
+          <meshStandardMaterial color={color} roughness={0.65} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 

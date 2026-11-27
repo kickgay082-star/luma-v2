@@ -114,6 +114,13 @@ export function TheaterVideoOverlay({
 
   const hasScreenShare = Boolean(screenShareStream);
   const isYoutube = !hasScreenShare && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
+  const isEmbed = !hasScreenShare && video?.sourceType === 'embed' && Boolean(video?.url);
+  const embedSrc =
+    isEmbed && video?.url
+      ? /embed|player/i.test(video.url)
+        ? video.url
+        : `/api/browser/proxy?url=${encodeURIComponent(video.url)}`
+      : null;
   const isNativeOrHls =
     !hasScreenShare &&
     Boolean(video?.url) &&
@@ -467,6 +474,16 @@ export function TheaterVideoOverlay({
               )}
             </div>
           </div>
+        )}
+
+        {isEmbed && embedSrc && (
+          <iframe
+            src={embedSrc}
+            className="h-full w-full border-0 bg-black"
+            allow="autoplay; fullscreen"
+            allowFullScreen
+            referrerPolicy="no-referrer"
+          />
         )}
 
         {isYoutube && (

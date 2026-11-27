@@ -266,6 +266,14 @@ export function CinemaScreen3D({
   // YouTube IFrame Player API Integration
   const isYoutube =
     !suspended && !hasScreenShare && video?.sourceType === 'youtube' && Boolean(video.youtubeId);
+  const isEmbed =
+    !suspended && !hasScreenShare && video?.sourceType === 'embed' && Boolean(video?.url);
+  const embedSrc =
+    isEmbed && video?.url
+      ? /embed|player/i.test(video.url)
+        ? video.url
+        : `/api/browser/proxy?url=${encodeURIComponent(video.url)}`
+      : null;
 
   useEffect(() => {
     setYtError(null);
@@ -447,15 +455,15 @@ export function CinemaScreen3D({
         <planeGeometry args={[width, height]} />
         {videoTexture ? (
           <meshBasicMaterial map={videoTexture} toneMapped={false} />
-        ) : standbyTexture && !isYoutube && !useHtmlVideoFallback ? (
+        ) : standbyTexture && !isYoutube && !isEmbed && !useHtmlVideoFallback ? (
           <meshBasicMaterial map={standbyTexture} />
         ) : (
           <meshBasicMaterial color="#05060A" />
         )}
       </mesh>
 
-      {/* Live YouTube or Non-CORS Video Html Surface Mapped to 3D Screen */}
-      {(isYoutube || useHtmlVideoFallback) && (
+      {/* Live YouTube, Embed, or Non-CORS Video Html Surface Mapped to 3D Screen */}
+      {(isYoutube || isEmbed || useHtmlVideoFallback) && (
         <Html
           transform
           position={[0, 0, 0.03]}
@@ -463,11 +471,19 @@ export function CinemaScreen3D({
           style={{
             width: '1280px',
             height: '720px',
-            pointerEvents: interactiveHtml ? 'auto' : 'none',
+            pointerEvents: interactiveHtml || isEmbed ? 'auto' : 'none',
           }}
         >
           <div className="relative h-full w-full overflow-hidden rounded-sm bg-black">
             {isYoutube && <div ref={setYtContainerEl} className="h-full w-full" />}
+            {isEmbed && embedSrc && (
+              <iframe
+                src={embedSrc}
+                className="h-full w-full border-0"
+                allow="autoplay; fullscreen"
+                referrerPolicy="no-referrer"
+              />
+            )}
             {useHtmlVideoFallback && video?.url && (
               <HtmlFallbackHlsVideo
                 url={video.url}

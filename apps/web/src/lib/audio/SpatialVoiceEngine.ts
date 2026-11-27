@@ -90,12 +90,14 @@ export class SpatialVoiceEngine {
   private peers = new Map<string, PeerNodeBundle>();
   private settings: SpatialVoiceSettings;
   private micEnabled = false;
+  private relayMode: 'auto' | 'server' = 'auto';
   private vadTimer: number | null = null;
   private lastVoiceEmit = 0;
   private unlockHandler: (() => void) | null = null;
-  private warnedAutoplay = false;
+  private audioLocked = false;
 
   private onLocalVoiceUpdate: (micEnabled: boolean, isSpeaking: boolean, level: number) => void;
+  private onAudioLockChange?: (locked: boolean) => void;
   private onError: (msg: string) => void;
 
   constructor(params: {
@@ -103,24 +105,19 @@ export class SpatialVoiceEngine {
     localPlayerId: string;
     settings: SpatialVoiceSettings;
     onLocalVoiceUpdate: (micEnabled: boolean, isSpeaking: boolean, level: number) => void;
+    onAudioLockChange?: (locked: boolean) => void;
     onError: (msg: string) => void;
   }) {
     this.socket = params.socket;
     this.localPlayerId = params.localPlayerId;
     this.settings = params.settings;
     this.onLocalVoiceUpdate = params.onLocalVoiceUpdate;
+    this.onAudioLockChange = params.onAudioLockChange;
     this.onError = params.onError;
 
     if (typeof window !== 'undefined') {
       this.unlockHandler = () => {
-        if (this.audioCtx && this.audioCtx.state === 'suspended') {
-          this.audioCtx.resume().catch(() => {});
-        }
-        for (const bundle of this.peers.values()) {
-          if (bundle.audioEl && bundle.audioEl.paused) {
-            bundle.audioEl.play().catch(() => {});
-          }
-        }
+        void this.unlockAudio();
       };
       window.addEventListener('pointerdown', this.unlockHandler, { passive: true });
       window.addEventListener('keydown', this.unlockHandler, { passive: true });
@@ -135,6 +132,51 @@ export class SpatialVoiceEngine {
     return this.micEnabled;
   }
 
+  getRelayMode(): 'auto' | 'server' {
+    return this.relayMode;
+  }
+
+  setRelayMode(mode: 'auto' | 'server'): void {
+    this.relayMode = mode;
+    for (const bundle of this.peers.values()) {
+      if (bundle.audioEl) {
+        bundle.audioEl.muted = mode === 'server';
+      }
+    }
+  }
+
+  private setAudioLocked(locked: boolean): void {
+    if (this.audioLocked === locked) return;
+    this.audioLocked = locked;
+    this.onAudioLockChange?.(locked);
+  }
+
+  async unlockAudio(): Promise<void> {
+    let anyBlocked = false;
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      try {
+        await this.audioCtx.resume();
+      } catch {
+        anyBlocked = true;
+      }
+    }
+    for (const bundle of this.peers.values()) {
+      if (bundle.audioEl) {
+        bundle.audioEl.muted = this.relayMode === 'server';
+        if (bundle.audioEl.paused) {
+          try {
+            await bundle.audioEl.play();
+          } catch {
+            anyBlocked = true;
+          }
+        }
+      }
+    }
+    if (!anyBlocked && (!this.audioCtx || this.audioCtx.state === 'running')) {
+      this.setAudioLocked(false);
+    }
+  }
+
   ensureAudioContext(): AudioContext {
     if (!this.audioCtx) {
       const Ctx =
@@ -146,7 +188,9 @@ export class SpatialVoiceEngine {
       this.masterGain.connect(this.audioCtx.destination);
     }
     if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().catch(() => {});
+      this.audioCtx.resume().catch(() => {
+        this.setAudioLocked(true);
+      });
     }
     return this.audioCtx;
   }
@@ -211,6 +255,8 @@ export class SpatialVoiceEngine {
       if (ctx.state === 'suspended') {
         await ctx.resume().catch(() => {});
       }
+      this.setAudioLocked(ctx.state === 'suspended');
+
       if (forceRestart && this.rawMicStream) {
         this.rawMicStream.getTracks().forEach((t) => t.stop());
       }
@@ -232,7 +278,6 @@ export class SpatialVoiceEngine {
       this.cleanupMicAudioNodes();
       this.rawMicStream = stream;
 
-      // Send the raw hardware-processed mic track directly over WebRTC
       const rawTrack = stream.getAudioTracks()[0];
       if (rawTrack) {
         for (const bundle of this.peers.values()) {
@@ -240,7 +285,6 @@ export class SpatialVoiceEngine {
         }
       }
 
-      // Analyze mic level for speaking UI AND feed PCM fallback only for non-P2P peers
       const source = ctx.createMediaStreamSource(stream);
       const gain = ctx.createGain();
       gain.gain.value = this.settings.inputGain;
@@ -261,7 +305,10 @@ export class SpatialVoiceEngine {
         const now = Date.now();
         const relayTargets: string[] = [];
         for (const [peerId, bundle] of this.peers.entries()) {
-          if (!bundle.iceConnected && now - bundle.createdAt > 3500) {
+          if (
+            this.relayMode === 'server' ||
+            (!bundle.iceConnected && now - bundle.createdAt > 2000)
+          ) {
             relayTargets.push(peerId);
           }
         }
@@ -273,7 +320,7 @@ export class SpatialVoiceEngine {
           sq += input[i] * input[i];
         }
         const rms = Math.sqrt(sq / (input.length / 4));
-        if (rms < 0.003) return;
+        if (rms < 0.0025) return;
 
         const pcm = downsampleToInt16(input, ctx.sampleRate, 16000);
         this.socket.emit('voice:pcm', {
@@ -458,7 +505,9 @@ export class SpatialVoiceEngine {
     pc.ontrack = (ev) => {
       const stream = ev.streams[0] || new MediaStream([ev.track]);
       ev.track.onunmute = () => {
-        bundle.audioEl?.play().catch(() => {});
+        bundle.audioEl?.play().catch(() => {
+          this.setAudioLocked(true);
+        });
       };
       this.attachRemoteAudioStream(bundle, stream);
     };
@@ -480,7 +529,7 @@ export class SpatialVoiceEngine {
     if (!bundle.audioEl) {
       const audio = document.createElement('audio');
       audio.autoplay = true;
-      audio.muted = false;
+      audio.muted = this.relayMode === 'server';
       audio.volume = Math.max(0, Math.min(1, bundle.lastGain * this.settings.masterVolume));
       audio.style.display = 'none';
       audio.setAttribute('playsinline', 'true');
@@ -491,15 +540,15 @@ export class SpatialVoiceEngine {
       }
       document.body?.appendChild(audio);
       audio.play().catch(() => {
-        if (!this.warnedAutoplay) {
-          this.warnedAutoplay = true;
-          this.onError('Karşı tarafın sesini duymak için ekrana bir kez tıklayın.');
-        }
+        this.setAudioLocked(true);
       });
       bundle.audioEl = audio;
     } else {
       bundle.audioEl.srcObject = stream;
-      bundle.audioEl.play().catch(() => {});
+      bundle.audioEl.muted = this.relayMode === 'server';
+      bundle.audioEl.play().catch(() => {
+        this.setAudioLocked(true);
+      });
     }
   }
 
@@ -507,10 +556,16 @@ export class SpatialVoiceEngine {
     const peerId = payload.fromPlayerId;
     if (!peerId || peerId === this.localPlayerId) return;
     const bundle = this.peers.get(peerId);
-    if (!bundle || bundle.iceConnected) return;
+    if (!bundle) return;
+    if (this.relayMode === 'auto' && bundle.iceConnected) return;
 
     const ctx = this.ensureAudioContext();
-    if (!this.masterGain || ctx.state !== 'running') return;
+    if (ctx.state !== 'running') {
+      ctx.resume().catch(() => {});
+      this.setAudioLocked(true);
+      return;
+    }
+    if (!this.masterGain) return;
 
     if (!bundle.pcmGainNode) {
       const gain = ctx.createGain();
@@ -602,9 +657,6 @@ export class SpatialVoiceEngine {
     }
   }
 
-  /**
-   * Updates proximity volume for every connected peer (both WebRTC audio element and PCM relay fallback).
-   */
   updateSpatialPositions(params: {
     listenerPosition: Vec3;
     listenerForward: Vec3;

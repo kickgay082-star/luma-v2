@@ -306,7 +306,7 @@ function PalmTree({ position }: { position: [number, number, number] }) {
         <cylinderGeometry args={[0.11, 0.16, 2.4, 8]} />
         <meshStandardMaterial color="#7C512B" roughness={0.9} />
       </mesh>
-      {/* Palm Fronds */}
+      {/* Palm Fronds + Coconuts */}
       {[0, 1.1, 2.2, 3.3, 4.4, 5.4].map((ang, i) => (
         <group key={i} position={[0.2, 5.2, 0.12]} rotation={[0.35, ang, 0]}>
           <mesh position={[0, -0.15, 1.15]} rotation={[0.28, 0, 0]}>
@@ -315,6 +315,50 @@ function PalmTree({ position }: { position: [number, number, number] }) {
           </mesh>
         </group>
       ))}
+      {[
+        [0.08, 4.95, 0.25],
+        [0.34, 4.92, 0.05],
+        [0.18, 4.96, -0.06],
+      ].map((p, idx) => (
+        <mesh key={idx} position={p as [number, number, number]}>
+          <sphereGeometry args={[0.14, 10, 10]} />
+          <meshStandardMaterial color="#4A2E14" roughness={0.85} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function BeachUmbrella({
+  position,
+  color = '#EF4444',
+}: {
+  position: [number, number, number];
+  color?: string;
+}) {
+  return (
+    <group position={position}>
+      {/* Pole */}
+      <mesh position={[0, 1.45, 0]}>
+        <cylinderGeometry args={[0.045, 0.05, 2.9, 8]} />
+        <meshStandardMaterial color="#E5E7EB" metalness={0.4} roughness={0.4} />
+      </mesh>
+      {/* Umbrella Canopy */}
+      <mesh position={[0, 2.75, 0]} castShadow>
+        <coneGeometry args={[1.65, 0.65, 8]} />
+        <meshStandardMaterial color={color} roughness={0.7} />
+      </mesh>
+      {/* Sun Lounger */}
+      <group position={[0.9, 0.2, 0]} rotation={[0, -0.25, 0]}>
+        <mesh position={[0, 0.14, 0]} castShadow>
+          <boxGeometry args={[0.78, 0.12, 1.85]} />
+          <meshStandardMaterial color="#F8FAFC" roughness={0.75} />
+        </mesh>
+        <mesh position={[0, 0.34, -0.7]} rotation={[0.55, 0, 0]} castShadow>
+          <boxGeometry args={[0.76, 0.1, 0.55]} />
+          <meshStandardMaterial color={color} roughness={0.75} />
+        </mesh>
+      </group>
     </group>
   );
 }
@@ -401,6 +445,19 @@ function ThemeSpecificBackdrop({
           </mesh>
         ))}
 
+        {/* Wooden Deck Plank Stripes */}
+        {[-9, -6, -3, 0, 3, 6, 9].map((zStripe, idx) => (
+          <mesh key={idx} position={[0, 0.008, zStripe]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[roomW - 0.5, 0.06]} />
+            <meshStandardMaterial color="#4A301C" roughness={0.9} />
+          </mesh>
+        ))}
+
+        {/* Beach Umbrellas & Cabana Loungers on the Sand */}
+        <BeachUmbrella position={[-14.5, -0.1, 2]} color="#F97316" />
+        <BeachUmbrella position={[14.5, -0.1, 2.5]} color="#0EA5E9" />
+        <BeachUmbrella position={[-13.8, -0.1, -9.5]} color="#EAB308" />
+
         {/* Palm Trees Around the Beach */}
         <PalmTree position={[-15.5, -0.1, -6]} />
         <PalmTree position={[15.5, -0.1, -5]} />
@@ -431,6 +488,28 @@ function ThemeSpecificBackdrop({
           <ringGeometry args={[5.8, 6.1, 4]} />
           <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
         </mesh>
+
+        {/* Checkered Marble Floor Trim Tiles */}
+        {[-9, -5, -1, 3, 7, 11].map((zTile, i) => (
+          <mesh key={i} position={[0, 0.009, zTile]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[roomW - 2, 0.14]} />
+            <meshStandardMaterial color="#D4AF37" metalness={0.55} roughness={0.35} />
+          </mesh>
+        ))}
+
+        {/* Arched Moonlit Villa Windows along Rear Corners */}
+        {[-6.8, 6.8].map((wx, idx) => (
+          <group key={idx} position={[wx, 4.4, 11.78]}>
+            <mesh>
+              <boxGeometry args={[3.2, 4.4, 0.14]} />
+              <meshStandardMaterial color="#0D192B" emissive="#1E3A8A" emissiveIntensity={0.45} />
+            </mesh>
+            <mesh position={[0, 0, -0.08]}>
+              <boxGeometry args={[3.45, 4.65, 0.06]} />
+              <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
+            </mesh>
+          </group>
+        ))}
 
         {/* Grand Crystal Chandelier */}
         <group position={[0, 7.2, 1.5]}>
@@ -505,6 +584,23 @@ function ThemeSpecificBackdrop({
           <planeGeometry args={[12.5, 9.8]} />
           <meshStandardMaterial color="#2E3240" roughness={0.95} />
         </mesh>
+
+        {/* Warm Low Bookshelf & Console on Back Wall */}
+        <group position={[0, 0, 11.1]}>
+          <mesh position={[0, 1.05, 0]} castShadow>
+            <boxGeometry args={[7.2, 2.1, 0.7]} />
+            <meshStandardMaterial color="#4A3222" roughness={0.75} />
+          </mesh>
+          {[-2.4, -0.8, 0.8, 2.4].map((bx, i) => (
+            <mesh key={i} position={[bx, 1.45, -0.05]}>
+              <boxGeometry args={[1.1, 0.45, 0.5]} />
+              <meshStandardMaterial
+                color={i % 2 === 0 ? '#D4A373' : '#7C5CFF'}
+                roughness={0.65}
+              />
+            </mesh>
+          ))}
+        </group>
 
         {/* Warm Wood Slat Accents & Tall Loft Windows */}
         {[-11.75, 11.75].map((xPos, side) => (
@@ -646,10 +742,28 @@ function ThemeSpecificBackdrop({
     );
   }
 
-  // 7. GAMING ROOM (RGB stüdyo masaları ve duvar ışıkları)
+  // 7. GAMING ROOM (RGB stüdyo masaları, tavan RGB barları ve duvar ışıkları)
   if (theme === 'gaming-room') {
     return (
       <group>
+        {/* Overhead RGB Esports Truss Bars */}
+        {[-2, 4].map((zBar, idx) => (
+          <group key={idx} position={[0, 7.6, zBar]}>
+            <mesh>
+              <boxGeometry args={[16, 0.14, 0.14]} />
+              <meshStandardMaterial
+                color={idx === 0 ? lightColor : '#3B82F6'}
+                emissive={idx === 0 ? lightColor : '#3B82F6'}
+                emissiveIntensity={1.2}
+              />
+            </mesh>
+          </group>
+        ))}
+        {/* Neon Floor Border Grid */}
+        <mesh position={[0, 0.012, 2]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[7.6, 7.8, 4]} />
+          <meshBasicMaterial color={lightColor} />
+        </mesh>
         {[-10.4, 10.4].map((xPos, side) =>
           [-3, 3].map((zPos, idx) => (
             <group key={`${side}-${idx}`} position={[xPos, 0, zPos]}>

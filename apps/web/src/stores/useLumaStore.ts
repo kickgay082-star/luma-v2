@@ -111,6 +111,7 @@ interface LumaStoreState {
   addChatMessage: (msg: ChatMessage) => void;
   updateChatMessage: (msg: ChatMessage) => void;
   deleteChatMessage: (messageId: string) => void;
+  clearChat: () => void;
 
   setLocalVoice: (micEnabled: boolean, isSpeaking: boolean, audioLevel: number) => void;
   setPeerVolume: (userId: string, volume: number) => void;
@@ -338,6 +339,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
     set((s) => ({
       chatHistory: s.chatHistory.filter((m) => m.id !== messageId),
     })),
+
+  clearChat: () => set({ chatHistory: [] }),
 
   setLocalVoice: (micEnabled, localSpeaking, localAudioLevel) =>
     set((s) => ({

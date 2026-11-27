@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { DEFAULT_AVATAR_CONFIG, sanitizeText } from '@luma/shared';
+import { pickDiverseAvatarPreset, sanitizeText } from '@luma/shared';
 import { dbExecute } from '@/lib/server/db';
 import {
   checkApiRateLimit,
@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
   const username = slugifyUsername(displayName);
   const now = Date.now();
   const dummyHash = `nameonly:${crypto.randomBytes(16).toString('hex')}`;
+  const initialAvatar = pickDiverseAvatarPreset(id + displayName);
 
   await dbExecute(
     `INSERT INTO users (id, username, display_name, email, password_hash, avatar_json, settings_json, last_seen_at, created_at)
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
       displayName,
       null,
       dummyHash,
-      JSON.stringify(DEFAULT_AVATAR_CONFIG),
+      JSON.stringify(initialAvatar),
       JSON.stringify({ graphicsQuality: 'high' }),
       now,
       now,
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest) {
       username,
       displayName,
       email: null,
-      avatar: DEFAULT_AVATAR_CONFIG,
+      avatar: initialAvatar,
       token,
     },
   });

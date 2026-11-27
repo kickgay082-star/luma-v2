@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
 import {
+  AdminActionType,
   ClientToServerEvents,
   PlayerState,
   PlayerTransformUpdate,
@@ -25,7 +26,9 @@ import {
   Camera,
   Check,
   Copy,
+  Crown,
   Eye,
+  Globe,
   Lock,
   Maximize,
   MessageSquare,
@@ -53,6 +56,7 @@ import { getEffectiveAvatar, useLumaStore } from '@/stores/useLumaStore';
 import { CameraMode, MobileInputState } from '@/components/three/PlayerControllers3D';
 import { RoomHudDrawers, ActiveDrawer } from '@/components/room/RoomHudDrawers';
 import { TheaterVideoOverlay } from '@/components/room/TheaterVideoOverlay';
+import { WebBrowserModal } from '@/components/room/WebBrowserModal';
 import { Lite2DRoomView } from '@/components/room/Lite2DRoomView';
 import { SpatialVoiceEngine } from '@/lib/audio/SpatialVoiceEngine';
 import { AmbientMusicEngine } from '@/lib/audio/AmbientMusicEngine';
@@ -131,6 +135,7 @@ export default function RoomPage() {
   const addChatMessage = useLumaStore((s) => s.addChatMessage);
   const updateChatMessage = useLumaStore((s) => s.updateChatMessage);
   const deleteChatMessage = useLumaStore((s) => s.deleteChatMessage);
+  const clearChat = useLumaStore((s) => s.clearChat);
   const setLocalVoice = useLumaStore((s) => s.setLocalVoice);
   const setPeerDistances = useLumaStore((s) => s.setPeerDistances);
 
@@ -141,6 +146,9 @@ export default function RoomPage() {
   const [readyToConnect, setReadyToConnect] = useState(false);
 
   const [drawer, setDrawer] = useState<ActiveDrawer>('none');
+  const [browserOpen, setBrowserOpen] = useState<boolean>(false);
+  const [audioLocked, setAudioLocked] = useState<boolean>(false);
+  const [voiceRelayMode, setVoiceRelayMode] = useState<'auto' | 'server'>('auto');
   const [cameraMode, setCameraMode] = useState<CameraMode>('follow');
   const [cameraZoom, setCameraZoom] = useState<number>(4.8);
   const [screenVolume, setScreenVolume] = useState<number>(0.85);
@@ -222,26 +230,31 @@ export default function RoomPage() {
     setHudVisible(true);
     if (hudTimeoutRef.current) window.clearTimeout(hudTimeoutRef.current);
     hudTimeoutRef.current = window.setTimeout(() => {
-      if (drawer === 'none' && !selectedRemote) {
+      if (drawer === 'none' && !selectedRemote && !browserOpen) {
         setHudVisible(false);
       }
     }, 4200);
-  }, [drawer, selectedRemote]);
+  }, [drawer, selectedRemote, browserOpen]);
 
   useEffect(() => {
-    if (drawer !== 'none' || selectedRemote) {
+    if (drawer !== 'none' || selectedRemote || browserOpen) {
       setHudVisible(true);
       if (hudTimeoutRef.current) window.clearTimeout(hudTimeoutRef.current);
     } else {
       bumpHud();
     }
-  }, [drawer, selectedRemote, bumpHud]);
+  }, [drawer, selectedRemote, browserOpen, bumpHud]);
+
+  useEffect(() => {
+    voiceEngineRef.current?.setRelayMode(voiceRelayMode);
+  }, [voiceRelayMode]);
 
   // ESC closes open overlays
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (selectedRemote) setSelectedRemote(null);
+        if (browserOpen) setBrowserOpen(false);
+        else if (selectedRemote) setSelectedRemote(null);
         else if (drawer !== 'none') setDrawer('none');
         else if (interactiveScreen) setInteractiveScreen(false);
         else setHudVisible((v) => !v);
@@ -249,7 +262,7 @@ export default function RoomPage() {
     };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [drawer, selectedRemote, interactiveScreen]);
+  }, [browserOpen, drawer, selectedRemote, interactiveScreen]);
 
   // Connect Socket.IO + Spatial Voice Engine
   useEffect(() => {
@@ -304,8 +317,10 @@ export default function RoomPage() {
               onLocalVoiceUpdate: (enabled, speaking, lvl) => {
                 setLocalVoice(enabled, speaking, lvl);
               },
+              onAudioLockChange: (locked) => setAudioLocked(locked),
               onError: (msg) => showNotice(msg),
             });
+            voice.setRelayMode(voiceRelayMode);
             voiceEngineRef.current = voice;
             if (hadMic) {
               voice.enableMicrophone(false).catch(() => {});
@@ -398,6 +413,7 @@ export default function RoomPage() {
     socket.on('chat:message', addChatMessage);
     socket.on('chat:updated', updateChatMessage);
     socket.on('chat:deleted', deleteChatMessage);
+    socket.on('chat:cleared', clearChat);
     socket.on('room:notice', ({ message }) => showNotice(message));
     socket.on('mod:kicked', (reason) => {
       showNotice(reason);
@@ -721,7 +737,7 @@ export default function RoomPage() {
           screenShareStream={screenShareStream}
           isLocalScreenSharer={isLocalScreenSharer}
           canControlVideo={canControlVideo}
-          inputLocked={drawer !== 'none' || theaterMode}
+          inputLocked={drawer !== 'none' || theaterMode || browserOpen}
           mobileInputRef={mobileInputRef}
           listenerTransformRef={listenerTransformRef}
           localPositionRef={localPositionRef}
@@ -803,19 +819,34 @@ export default function RoomPage() {
           </button>
 
           {isPrivileged && (
-            <button
-              type="button"
-              onClick={() => setDrawer(drawer === 'customize' ? 'none' : 'customize')}
-              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium backdrop-blur-md transition ${
-                drawer === 'customize'
-                  ? 'border-[#7C5CFF] bg-[#7C5CFF] text-white'
-                  : 'border-white/10 bg-[#0B0D14]/85 text-zinc-200 hover:text-white'
-              }`}
-              title="Mekan ve Oda Özelleştirme"
-            >
-              <Paintbrush className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Mekan</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setDrawer(drawer === 'admin' ? 'none' : 'admin')}
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium backdrop-blur-md transition ${
+                  drawer === 'admin'
+                    ? 'border-amber-400 bg-amber-500 text-black'
+                    : 'border-amber-500/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+                }`}
+                title="Tam Yetkili Admin / Host Menüsü"
+              >
+                <Crown className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Admin</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDrawer(drawer === 'customize' ? 'none' : 'customize')}
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium backdrop-blur-md transition ${
+                  drawer === 'customize'
+                    ? 'border-[#7C5CFF] bg-[#7C5CFF] text-white'
+                    : 'border-white/10 bg-[#0B0D14]/85 text-zinc-200 hover:text-white'
+                }`}
+                title="Mekan ve Oda Özelleştirme"
+              >
+                <Paintbrush className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Mekan</span>
+              </button>
+            </>
           )}
 
           <button
@@ -995,6 +1026,42 @@ export default function RoomPage() {
                 style={{ transform: `scale(${1 + localAudioLevel * 1.4})` }}
               />
             )}
+          </button>
+
+          {audioLocked && (
+            <button
+              type="button"
+              onClick={() => void voiceEngineRef.current?.unlockAudio()}
+              className="flex items-center gap-1 rounded-xl bg-amber-500 px-2.5 py-2 text-[11px] font-semibold text-black shadow-lg hover:bg-amber-400"
+              title="Tarayıcı sesi engelledi — diğer kişileri duymak için tıkla"
+            >
+              <Volume2 className="h-3.5 w-3.5" />
+              <span>Sesi Aç</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() =>
+              setVoiceRelayMode((m) => {
+                const next = m === 'auto' ? 'server' : 'auto';
+                showNotice(
+                  next === 'server'
+                    ? 'Ses modu: Sunucu Rölesi (çift yönlü ses için zorunlu aktarım)'
+                    : 'Ses modu: Otomatik (WebRTC + yedek sunucu)',
+                );
+                return next;
+              })
+            }
+            className={`hidden items-center gap-1 rounded-xl px-2.5 py-2 text-[11px] font-medium transition lg:inline-flex ${
+              voiceRelayMode === 'server'
+                ? 'bg-[#7C5CFF]/25 text-[#C4B5FD] ring-1 ring-[#7C5CFF]/40'
+                : 'bg-white/[0.06] text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+            }`}
+            title="Karşı tarafın sesi gelmiyorsa Sunucu Rölesine geçir"
+          >
+            <Wifi className="h-3.5 w-3.5" />
+            <span>{voiceRelayMode === 'server' ? 'Ses: Sunucu' : 'Ses: Oto'}</span>
           </button>
 
           {!use2DLite && (
@@ -1191,16 +1258,22 @@ export default function RoomPage() {
           {canControlVideo && (
             <button
               type="button"
+              onClick={() => setBrowserOpen(true)}
+              className="hidden items-center gap-1.5 rounded-xl bg-[#7C5CFF]/25 px-3 py-2 text-xs font-medium text-[#C4B5FD] ring-1 ring-[#7C5CFF]/40 transition hover:bg-[#7C5CFF]/35 md:flex"
+              title="Uygulama içi tarayıcıyı aç, film/dizi sitesinden video bul ve perdeye ver"
+            >
+              <Globe className="h-4 w-4" />
+              <span>Tarayıcı</span>
+            </button>
+          )}
+          {isLocalScreenSharer && (
+            <button
+              type="button"
               onClick={handleToggleScreenShare}
-              className={`hidden items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition md:flex ${
-                isLocalScreenSharer
-                  ? 'bg-red-500/80 text-white hover:bg-red-500'
-                  : 'bg-[#3B82F6]/20 text-blue-200 ring-1 ring-blue-500/30 hover:bg-[#3B82F6]/30'
-              }`}
-              title="Kendi tarayıcından bir sekmeyi sesle 3D perdeye yansıt"
+              className="hidden items-center gap-1.5 rounded-xl bg-red-500/80 px-3 py-2 text-xs font-medium text-white hover:bg-red-500 md:flex"
             >
               <MonitorUp className="h-4 w-4" />
-              <span>{isLocalScreenSharer ? 'Yayını Durdur' : 'Sekme Paylaş'}</span>
+              <span>Yayını Durdur</span>
             </button>
           )}
           <button
@@ -1298,6 +1371,21 @@ export default function RoomPage() {
         />
       )}
 
+      {/* In-App Web Browser Overlay (No Screen Share Needed) */}
+      <WebBrowserModal
+        open={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        onBroadcastVideo={(p) =>
+          socketRef.current?.emit(
+            'video:control',
+            { action: 'load', ...p },
+            (r) => {
+              if (!r.ok && r.error) showNotice(r.error);
+            },
+          )
+        }
+      />
+
       {/* Slide-Over HUD Drawers */}
       <RoomHudDrawers
         drawer={drawer}
@@ -1310,6 +1398,10 @@ export default function RoomPage() {
         screenShareName={screenShare.sharerName}
         isLocalScreenSharer={isLocalScreenSharer}
         onToggleScreenShare={handleToggleScreenShare}
+        onOpenWebBrowser={() => {
+          setDrawer('none');
+          setBrowserOpen(true);
+        }}
         queue={queue}
         chatHistory={chatHistory}
         onLoadVideo={(p) =>
@@ -1351,6 +1443,11 @@ export default function RoomPage() {
         }
         onModAction={(targetPlayerId, action) =>
           socketRef.current?.emit('mod:action', { targetPlayerId, action })
+        }
+        onAdminAction={(action: AdminActionType, message?: string) =>
+          socketRef.current?.emit('admin:action', { action, message }, (r) => {
+            if (!r.ok && r.error) showNotice(r.error);
+          })
         }
         onUpdateSpatialSettings={handleUpdateSpatial}
         onUpdateGraphicsQuality={handleUpdateGraphics}

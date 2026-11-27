@@ -64,6 +64,18 @@ export interface VoicePcmPayload {
   pcm: ArrayBuffer;
 }
 
+export type AdminActionType =
+  | 'mute_all_voice'
+  | 'unmute_all_voice'
+  | 'clear_chat'
+  | 'eject_all_seats'
+  | 'allow_all_video'
+  | 'deny_all_video'
+  | 'lock_chat'
+  | 'unlock_chat'
+  | 'reset_video'
+  | 'announce';
+
 export interface ClientToServerEvents {
   'room:join': (payload: JoinRoomPayload, ack: (res: JoinRoomAck) => void) => void;
   'room:leave': () => void;
@@ -100,8 +112,12 @@ export interface ClientToServerEvents {
   'chat:delete': (messageId: string) => void;
   'mod:action': (payload: {
     targetPlayerId: string;
-    action: 'kick' | 'mute_voice' | 'unmute_voice' | 'mute_chat' | 'unmute_chat' | 'promote_mod' | 'demote_mod' | 'transfer_owner' | 'allow_video' | 'deny_video';
+    action: 'kick' | 'kick_seat' | 'mute_voice' | 'unmute_voice' | 'mute_chat' | 'unmute_chat' | 'promote_mod' | 'demote_mod' | 'transfer_owner' | 'allow_video' | 'deny_video';
   }) => void;
+  'admin:action': (
+    payload: { action: AdminActionType; message?: string },
+    ack?: (res: { ok: boolean; error?: string }) => void,
+  ) => void;
 }
 
 export interface ServerToClientEvents {
@@ -139,6 +155,7 @@ export interface ServerToClientEvents {
   'chat:message': (msg: ChatMessage) => void;
   'chat:updated': (msg: ChatMessage) => void;
   'chat:deleted': (messageId: string) => void;
+  'chat:cleared': () => void;
   'mod:kicked': (reason: string) => void;
   'room:notice': (payload: { level: 'info' | 'warning' | 'error'; message: string }) => void;
 }
