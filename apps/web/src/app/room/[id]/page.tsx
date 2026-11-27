@@ -249,6 +249,37 @@ export default function RoomPage() {
     voiceEngineRef.current?.setRelayMode(voiceRelayMode);
   }, [voiceRelayMode]);
 
+  // Receive videos sent directly from the downloadable Luma Browser Extension
+  useEffect(() => {
+    const onExtMsg = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin) return;
+      const d = ev.data;
+      if (!d || typeof d !== 'object') return;
+      if (d.type === 'LUMA_EXTENSION_VIDEO' && typeof d.url === 'string') {
+        const title =
+          typeof d.title === 'string' && d.title ? d.title : 'Eklentiden Gelen Video';
+        const sourceType: VideoSourceType =
+          d.sourceType === 'hls' ||
+          d.sourceType === 'youtube' ||
+          d.sourceType === 'embed' ||
+          d.sourceType === 'iptv'
+            ? d.sourceType
+            : 'mp4';
+        socketRef.current?.emit(
+          'video:control',
+          { action: 'load', sourceType, url: d.url, title },
+          (r) => {
+            if (!r.ok && r.error) showNotice(r.error);
+            else showNotice(`Eklentiden video perdeye yüklendi: ${title}`);
+          },
+        );
+        setBrowserOpen(false);
+      }
+    };
+    window.addEventListener('message', onExtMsg);
+    return () => window.removeEventListener('message', onExtMsg);
+  }, [showNotice]);
+
   // ESC closes open overlays
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {

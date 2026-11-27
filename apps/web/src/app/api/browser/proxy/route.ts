@@ -149,6 +149,10 @@ export async function GET(req: NextRequest) {
     }
 
     let html = (await upstream.text()).slice(0, 2_000_000);
+    // Remove frame-blocking or strict CSP meta tags so pages render inside Luma's modal
+    html = html
+      .replace(/<meta[^>]*http-equiv=["']?(Content-Security-Policy|X-Frame-Options)["']?[^>]*>/gi, '')
+      .replace(/top\s*!==\s*self|self\s*!==\s*top|window\.top\s*!==\s*window\.self/gi, 'false');
     const hook = buildInjectedHook(finalUrl);
 
     if (/<head[^>]*>/i.test(html)) {
