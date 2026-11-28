@@ -64,13 +64,13 @@ export function loadYouTubeIframeApi(onReady: () => void): void {
 }
 
 export function getYouTubeErrorMessage(code: number): string {
-  if (code === 101 || code === 150) {
-    return 'Bu YouTube videosunun sahibi site içi oynatmayı devre dışı bırakmış. Başka bir video linki deneyebilirsiniz.';
+  if (code === 101 || code === 150 || code === 153) {
+    return "Bu YouTube videosunun sahibi site içi oynatmayı kapatmış. Aşağıdan YouTube'da Aç deyip Luma Eklentisi (Canlı Odaya Aktar) ile odada herkese izletebilirsin.";
   }
   if (code === 100) {
     return 'Bu YouTube videosu bulunamadı veya gizli.';
   }
-  return `YouTube oynatıcı hatası (Kod: ${code}). Başka bir video deneyebilirsiniz.`;
+  return `YouTube oynatıcı hatası (Kod: ${code}). Video engelliyse YouTube'da açıp Luma Eklentisiyle aktarabilirsiniz.`;
 }
 
 export function computeSyncedTime(video: VideoState): number {

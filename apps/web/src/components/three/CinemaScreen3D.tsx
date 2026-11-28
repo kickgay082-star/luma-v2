@@ -499,17 +499,26 @@ export function CinemaScreen3D({
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/92 p-10 text-center text-zinc-200">
                 <AlertCircle className="h-16 w-16 text-amber-400" />
                 <p className="mt-4 max-w-2xl text-2xl font-medium">{ytError}</p>
-                {video?.youtubeId && (
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  {video?.youtubeId && (
+                    <a
+                      href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-lg font-semibold text-black hover:bg-zinc-200"
+                    >
+                      <ExternalLink className="h-5 w-5" />
+                      <span>YouTube&apos;da Aç (Eklentiyle İzlet)</span>
+                    </a>
+                  )}
                   <a
-                    href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-5 flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-lg font-semibold text-black"
+                    href="/api/extension/download"
+                    download="luma-video-koprusu-eklentisi.zip"
+                    className="flex items-center gap-2 rounded-xl bg-[#7C5CFF] px-5 py-2.5 text-lg font-semibold text-white hover:bg-[#6D4AF5]"
                   >
-                    <ExternalLink className="h-5 w-5" />
-                    <span>YouTube&apos;da Aç</span>
+                    <span>Luma Eklentisini İndir</span>
                   </a>
-                )}
+                </div>
               </div>
             )}
             {streamError && (

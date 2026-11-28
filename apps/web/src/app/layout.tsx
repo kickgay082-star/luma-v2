@@ -19,6 +19,7 @@ export const metadata: Metadata = {
   title: 'Luma — 3D Sosyal Sinema ve Ortak İzleme Platformu',
   description:
     'Gerçek zamanlı multiplayer 3D sanal odalar, özelleştirilebilir avatarlar, konumsal sesli sohbet, YouTube ve IPTV izleme deneyimi.',
+  referrer: 'strict-origin-when-cross-origin',
 };
 
 export default function RootLayout({

@@ -499,12 +499,19 @@ export function TheaterVideoOverlay({
                       href={`https://www.youtube.com/watch?v=${video.youtubeId}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black"
+                      className="flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-zinc-200"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
-                      YouTube&apos;da Aç
+                      YouTube&apos;da Aç (Eklentiyle İzlet)
                     </a>
                   )}
+                  <a
+                    href="/api/extension/download"
+                    download="luma-video-koprusu-eklentisi.zip"
+                    className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-medium text-white hover:bg-white/15"
+                  >
+                    Luma Eklentisi İndir
+                  </a>
                   <button
                     type="button"
                     onClick={onOpenMedia}
