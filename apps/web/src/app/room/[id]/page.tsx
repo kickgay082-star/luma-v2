@@ -43,7 +43,6 @@ import {
   Radio,
   Settings,
   SkipForward,
-  Tv,
   UserPlus,
   Users,
   Volume2,
@@ -53,9 +52,14 @@ import {
   X,
 } from 'lucide-react';
 import { getEffectiveAvatar, useLumaStore } from '@/stores/useLumaStore';
+import {
+  matchFourDEffectsFromText,
+  useFourDStore,
+  ZERO_4D_EFFECTS,
+} from '@/stores/useFourDStore';
 import { CameraMode, MobileInputState } from '@/components/three/PlayerControllers3D';
 import { RoomHudDrawers, ActiveDrawer } from '@/components/room/RoomHudDrawers';
-import { TheaterVideoOverlay } from '@/components/room/TheaterVideoOverlay';
+import { FourDOverlay2D } from '@/components/room/FourDOverlay2D';
 import { WebBrowserModal } from '@/components/room/WebBrowserModal';
 import { Lite2DRoomView } from '@/components/room/Lite2DRoomView';
 import { SpatialVoiceEngine } from '@/lib/audio/SpatialVoiceEngine';
@@ -156,7 +160,6 @@ export default function RoomPage() {
   const [nearestSeat, setNearestSeat] = useState<SeatState | null>(null);
   const [selectedRemote, setSelectedRemote] = useState<PlayerState | null>(null);
   const [hudVisible, setHudVisible] = useState<boolean>(true);
-  const [theaterMode, setTheaterMode] = useState<boolean>(false);
   const [copiedInvite, setCopiedInvite] = useState<boolean>(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -535,6 +538,123 @@ export default function RoomPage() {
     return () => window.clearInterval(timer);
   }, [setPeerDistances]);
 
+  // Fetch 4D scene & caption profile whenever a YouTube/web video loads
+  useEffect(() => {
+    const fourD = useFourDStore.getState();
+    if (!video?.url) {
+      fourD.reset4D();
+      return;
+    }
+    if (video.sourceType !== 'youtube' || !video.youtubeId) {
+      const matched = matchFourDEffectsFromText(video.title || '');
+      fourD.setProfile({
+        videoKey: video.url,
+        biomeLabel: matched?.label || '4D Görüntü Analizi',
+        base: matched?.effects || { wind: 0.1 },
+        cues: [],
+      });
+      return;
+    }
+
+    let cancelled = false;
+    fetch(
+      `/api/media/4d-profile?youtubeId=${encodeURIComponent(video.youtubeId)}&title=${encodeURIComponent(video.title || '')}`,
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data) {
+          useFourDStore.getState().setProfile(data);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [video?.url, video?.youtubeId, video?.sourceType, video?.title]);
+
+  // 4DX Timeline + Biome Driver (drives YouTube timed cues, title biomes, & manual bursts)
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const store = useFourDStore.getState();
+      if (!store.enabled) return;
+
+      if (store.manualOverride) {
+        if (Date.now() < store.manualUntil) {
+          store.setCurrent({ ...ZERO_4D_EFFECTS, ...store.manualOverride });
+          return;
+        }
+        store.clearManual();
+      }
+
+      if (!video?.url || !video.isPlaying) {
+        if (!screenShareStream) {
+          store.setCurrent(ZERO_4D_EFFECTS);
+        }
+        return;
+      }
+
+      // Pixel analyzer drives native/HLS/tabCapture streams when no YouTube profile cue overrides
+      const isYoutubeOrEmbed = video.sourceType === 'youtube' || video.sourceType === 'embed';
+      if (!isYoutubeOrEmbed) return;
+
+      const t = video.isLive
+        ? (Date.now() / 1000) % 120
+        : video.currentTime +
+          Math.max(0, (Date.now() - video.updatedAt) / 1000) * video.playbackRate;
+
+      const prof = store.profile;
+      const base = prof?.base || {};
+      const next = {
+        water: base.water || 0,
+        rain: base.rain || 0,
+        fire: base.fire || 0,
+        snow: base.snow || 0,
+        wind: base.wind || 0.12,
+        shake: base.shake || 0,
+        lightning: 0,
+        ambilightColor: base.ambilightColor || '#7C5CFF',
+        sceneLabel: prof?.biomeLabel || '4D Dinamik Sinema',
+      };
+
+      // Overlay any active timestamped caption/scene cue
+      if (prof?.cues?.length) {
+        for (const cue of prof.cues) {
+          if (t >= cue.at && t <= cue.at + cue.dur) {
+            if (cue.effects.water) next.water = Math.max(next.water, cue.effects.water);
+            if (cue.effects.rain) next.rain = Math.max(next.rain, cue.effects.rain);
+            if (cue.effects.fire) next.fire = Math.max(next.fire, cue.effects.fire);
+            if (cue.effects.snow) next.snow = Math.max(next.snow, cue.effects.snow);
+            if (cue.effects.wind) next.wind = Math.max(next.wind, cue.effects.wind);
+            if (cue.effects.shake) next.shake = Math.max(next.shake, cue.effects.shake);
+            if (cue.effects.lightning) next.lightning = Math.max(next.lightning, cue.effects.lightning);
+            if (cue.effects.ambilightColor) next.ambilightColor = cue.effects.ambilightColor;
+            next.sceneLabel = cue.label;
+          }
+        }
+      }
+
+      // Dynamic motion pulse during playback (subtle wave/seat rumble + periodic lightning on storm)
+      const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
+      if (next.rain > 0.5 && Math.sin(t * 0.9) > 0.92) {
+        next.lightning = 0.95;
+        next.shake = Math.max(next.shake, 0.72);
+      }
+      if (next.water > 0.35) {
+        next.shake = Math.max(next.shake, 0.16 + pulse * 0.2);
+      }
+      if (next.wind > 0.45) {
+        next.shake = Math.max(next.shake, 0.22 + pulse * 0.35);
+      }
+
+      store.setCurrent(next);
+    }, 160);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [video, screenShareStream]);
+
   // Live video timeline ticker
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -796,11 +916,11 @@ export default function RoomPage() {
           cameraZoom={cameraZoom}
           screenVolume={screenVolume}
           interactiveScreen={interactiveScreen}
-          suspended={theaterMode}
+          suspended={false}
           screenShareStream={screenShareStream}
           isLocalScreenSharer={isLocalScreenSharer}
           canControlVideo={canControlVideo}
-          inputLocked={drawer !== 'none' || theaterMode || browserOpen}
+          inputLocked={drawer !== 'none' || browserOpen}
           mobileInputRef={mobileInputRef}
           listenerTransformRef={listenerTransformRef}
           localPositionRef={localPositionRef}
@@ -1283,16 +1403,6 @@ export default function RoomPage() {
                   <span>Perde Kontrolü</span>
                 </button>
               )}
-
-              <button
-                type="button"
-                onClick={() => setTheaterMode(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
-                title="Videoyu 3D sahne olmadan normal tam ekran modunda izle"
-              >
-                <Tv className="h-3.5 w-3.5" />
-                <span>Normal İzle</span>
-              </button>
             </>
           ) : screenShareStream ? (
             <div className="flex items-center gap-2">
@@ -1300,14 +1410,6 @@ export default function RoomPage() {
                 <MonitorUp className="h-3.5 w-3.5" />
                 {screenShare.sharerName ? `${screenShare.sharerName} Yayında` : 'Sekme Yayını'}
               </span>
-              <button
-                type="button"
-                onClick={() => setTheaterMode(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
-              >
-                <Tv className="h-3.5 w-3.5" />
-                <span>Normal İzle</span>
-              </button>
             </div>
           ) : (
             <span className="hidden text-xs text-zinc-500 sm:inline">
@@ -1385,54 +1487,8 @@ export default function RoomPage() {
         </div>
       </footer>
 
-      {/* Normal Fullscreen Video Mode (2D Theater Overlay) */}
-      {theaterMode && (
-        <TheaterVideoOverlay
-          roomName={room?.name || roomMeta?.name || 'Luma'}
-          onlineCount={players.length}
-          video={video}
-          screenShareStream={screenShareStream}
-          screenShareName={screenShare.sharerName}
-          isLocalScreenSharer={isLocalScreenSharer}
-          displayTime={displayTime}
-          hasQueue={queue.length > 0}
-          screenVolume={screenVolume}
-          micEnabled={micEnabled}
-          localAudioLevel={localAudioLevel}
-          canControlVideo={canControlVideo}
-          onChangeVolume={setScreenVolume}
-          onStopScreenShare={handleToggleScreenShare}
-          onTogglePlay={() =>
-            emitVideoControl({
-              action: video?.isPlaying ? 'pause' : 'play',
-            })
-          }
-          onSeek={(targetSec) =>
-            emitVideoControl({
-              action: 'seek',
-              currentTime: targetSec,
-            })
-          }
-          onChangeRate={(rate) =>
-            emitVideoControl({
-              action: 'rate',
-              playbackRate: rate,
-            })
-          }
-          onPlayerSyncAction={emitVideoControl}
-          onNextQueue={() => socketRef.current?.emit('queue:next')}
-          onVideoEnded={() => socketRef.current?.emit('queue:next')}
-          onToggleMic={handleToggleMic}
-          onOpenMedia={() => setDrawer(drawer === 'media' ? 'none' : 'media')}
-          onOpenSocial={() => setDrawer(drawer === 'social' ? 'none' : 'social')}
-          onExitTheater={() => {
-            if (document.fullscreenElement) {
-              document.exitFullscreen().catch(() => {});
-            }
-            setTheaterMode(false);
-          }}
-        />
-      )}
+      {/* 4DX Physical Screen Droplets, Heat, Lightning, & Control Pill */}
+      <FourDOverlay2D canTriggerEffects={Boolean(canControlVideo || isPrivileged)} />
 
       {/* In-App Web Browser Overlay (No Screen Share Needed) */}
       <WebBrowserModal

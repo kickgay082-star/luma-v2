@@ -18,6 +18,7 @@ import {
 } from '@luma/shared';
 import { Avatar3D } from './Avatar3D';
 import { RemoteTargetTransform, useLumaStore } from '@/stores/useLumaStore';
+import { useFourDStore } from '@/stores/useFourDStore';
 
 export type CameraMode = 'follow' | 'orbit' | 'cinema';
 
@@ -227,7 +228,7 @@ export function LocalPlayerController({
     };
   }, [gl]);
 
-  useFrame((_, rawDelta) => {
+  useFrame(({ clock }, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const keys = keysRef.current;
 
@@ -369,6 +370,32 @@ export function LocalPlayerController({
       camera.lookAt(lookAhead);
     }
 
+    // 4DX Motion Seat & Camera Shake / Wave Sway
+    const fourD = useFourDStore.getState();
+    if (fourD.enabled) {
+      const sLevel = Math.min(1.5, fourD.current.shake * fourD.intensity);
+      const wLevel = Math.min(1.2, fourD.current.water * fourD.intensity);
+      const t4 = clock.elapsedTime;
+      if (sLevel > 0.03) {
+        const amp = sLevel * 0.11;
+        camera.position.x += Math.sin(t4 * 34) * amp;
+        camera.position.y += Math.cos(t4 * 41) * amp * 0.85;
+        camera.rotation.z += Math.sin(t4 * 27) * sLevel * 0.024;
+      }
+      if (wLevel > 0.1) {
+        camera.position.y += Math.sin(t4 * 2.2) * wLevel * 0.035;
+        camera.rotation.z += Math.cos(t4 * 1.5) * wLevel * 0.012;
+      }
+      if (groupRef.current && localPlayer.seatedSeatId && sLevel > 0.04) {
+        groupRef.current.position.y = posRef.current[1] + Math.abs(Math.sin(t4 * 28)) * sLevel * 0.055;
+        groupRef.current.rotation.x = Math.sin(t4 * 22) * sLevel * 0.06;
+      } else if (groupRef.current) {
+        groupRef.current.rotation.x = 0;
+      }
+    } else if (groupRef.current) {
+      groupRef.current.rotation.x = 0;
+    }
+
     // Update Web Audio API AudioListener vector ref
     const forward = new THREE.Vector3();
     camera.getWorldDirection(forward);
@@ -441,7 +468,7 @@ export function RemoteAvatar3D({ player, onSelect }: RemoteAvatar3DProps) {
   const groupRef = useRef<THREE.Group>(null);
   const targetRef = useRef<RemoteTargetTransform | null>(null);
 
-  useFrame((_, rawDelta) => {
+  useFrame(({ clock }, rawDelta) => {
     const dt = Math.min(rawDelta, 0.05);
     const group = groupRef.current;
     if (!group) return;

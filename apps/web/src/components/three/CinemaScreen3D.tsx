@@ -12,6 +12,7 @@ import {
   loadYouTubeIframeApi,
   YTPlayerInstance,
 } from '@/lib/video/youtubeApi';
+import { useFourDStore } from '@/stores/useFourDStore';
 
 interface CinemaScreen3DProps {
   position: [number, number, number];
@@ -88,12 +89,12 @@ export function CinemaScreen3D({
       ctx.fillStyle = '#F3F4F6';
       ctx.font = '600 54px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('LUMA CINEMA', 640, 325);
+      ctx.fillText('LUMA 4D CINEMA', 640, 325);
 
       ctx.fillStyle = '#9CA3AF';
       ctx.font = '400 24px system-ui, sans-serif';
       ctx.fillText(
-        'Alt menüdeki Medya veya IPTV panelinden YouTube, HLS veya M3U8 yayını başlatın.',
+        'Video açıldığında su, rüzgar, ateş, kar ve sarsıntı efektleri 4D olarak yaşatılır.',
         640,
         385,
       );
@@ -262,6 +263,109 @@ export function CinemaScreen3D({
     tex.magFilter = THREE.LinearFilter;
     return tex;
   }, [videoEl, useHtmlVideoFallback]);
+
+  // Real-time pixel + color + motion analyzer for MP4 / HLS / Extension Tab Streams
+  useEffect(() => {
+    if (!videoEl || suspended) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 16;
+    canvas.height = 10;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    let prevLuma = 0;
+    let prevPixels: Uint8ClampedArray | null = null;
+    let lightningDecay = 0;
+
+    const timer = window.setInterval(() => {
+      const store = useFourDStore.getState();
+      if (!store.enabled) return;
+      if (store.manualOverride && Date.now() < store.manualUntil) return;
+      if (videoEl.paused || videoEl.readyState < 2) return;
+
+      try {
+        ctx.drawImage(videoEl, 0, 0, 16, 10);
+        const data = ctx.getImageData(0, 0, 16, 10).data;
+
+        let sumR = 0;
+        let sumG = 0;
+        let sumB = 0;
+        let blueCount = 0;
+        let fireCount = 0;
+        let snowCount = 0;
+        let motionSum = 0;
+        const pxCount = data.length / 4;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          sumR += r;
+          sumG += g;
+          sumB += b;
+
+          if (b > r * 1.24 && b > 80 && g > 55) blueCount++;
+          if (r > b * 1.45 && r > 125 && g < 210) fireCount++;
+          if (r > 180 && g > 185 && b > 190) snowCount++;
+
+          if (prevPixels) {
+            motionSum +=
+              (Math.abs(r - prevPixels[i]) +
+                Math.abs(g - prevPixels[i + 1]) +
+                Math.abs(b - prevPixels[i + 2])) /
+              765;
+          }
+        }
+        prevPixels = new Uint8ClampedArray(data);
+
+        const avgR = Math.round(sumR / pxCount);
+        const avgG = Math.round(sumG / pxCount);
+        const avgB = Math.round(sumB / pxCount);
+        const luma = (avgR * 0.299 + avgG * 0.587 + avgB * 0.114) / 255;
+        const deltaLuma = luma - prevLuma;
+        prevLuma = luma;
+
+        const motion = Math.min(1, (motionSum / pxCount) * 4.5);
+        const waterRatio = blueCount / pxCount;
+        const fireRatio = fireCount / pxCount;
+        const snowRatio = snowCount / pxCount;
+
+        if (deltaLuma > 0.24) lightningDecay = 1;
+        else lightningDecay = Math.max(0, lightningDecay - 0.35);
+
+        const water = waterRatio > 0.28 ? Math.min(1, waterRatio * 1.45) : 0;
+        const rain = waterRatio > 0.24 && luma < 0.42 ? Math.min(1, waterRatio * 1.2) : 0;
+        const fire = fireRatio > 0.22 ? Math.min(1, fireRatio * 1.6) : 0;
+        const snow = snowRatio > 0.45 && avgB >= avgR * 0.94 ? Math.min(1, snowRatio * 1.25) : 0;
+        const wind = Math.min(1, motion * 0.85);
+        const shake = Math.min(1, (motion > 0.35 ? motion * 0.9 : 0) + lightningDecay * 0.55 + fire * 0.4);
+
+        const labels: string[] = [];
+        if (water > 0.25) labels.push('Su');
+        if (rain > 0.25) labels.push('Yağmur');
+        if (fire > 0.25) labels.push('Alev');
+        if (snow > 0.25) labels.push('Kar');
+        if (lightningDecay > 0.3) labels.push('Şimşek');
+        if (shake > 0.3) labels.push('Sarsıntı');
+
+        store.setCurrent({
+          water,
+          rain,
+          fire,
+          snow,
+          wind,
+          shake,
+          lightning: lightningDecay,
+          ambilightColor: `#${avgR.toString(16).padStart(2, '0')}${avgG.toString(16).padStart(2, '0')}${avgB.toString(16).padStart(2, '0')}`,
+          sceneLabel: labels.length > 0 ? labels.join(' · ') : '4D Görüntü Senkronu',
+        });
+      } catch {
+        // Ignore cross-origin tainted frames silently
+      }
+    }, 130);
+
+    return () => window.clearInterval(timer);
+  }, [videoEl, suspended]);
 
   // YouTube IFrame Player API Integration
   const isYoutube =

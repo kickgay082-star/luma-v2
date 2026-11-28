@@ -11,6 +11,7 @@ import {
 } from '@luma/shared';
 import { Seat3D } from './Seat3D';
 import { CinemaScreen3D } from './CinemaScreen3D';
+import { Effects4D3D } from './Effects4D3D';
 
 interface RoomEnvironment3DProps {
   customization: RoomCustomization;
@@ -278,6 +279,9 @@ export function RoomEnvironment3D({
         onPlayerSyncAction={onPlayerSyncAction}
         onVideoEnded={onVideoEnded}
       />
+
+      {/* 4DX Physical Immersion Effects (Water, Rain, Fire, Snow, Wind, Lightning, Ambilight) */}
+      <Effects4D3D roomW={roomW} roomD={roomD} screenZ={meta.screen.position[2]} />
 
       {/* Interactive Physical 3D Seats */}
       {seats.map((seat) => (
