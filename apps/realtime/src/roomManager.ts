@@ -7,6 +7,7 @@ import {
   ChatMessage,
   DEFAULT_ROOM_CUSTOMIZATION,
   extractYouTubeId,
+  GameActionPayload,
   getFloorElevationAt,
   pickDiverseAvatarPreset,
   PlayerRole,
@@ -17,16 +18,23 @@ import {
   RoomCustomization,
   roomCustomizationSchema,
   RoomGeometry,
+  RoomGamesState,
   RoomStateSnapshot,
   RoomSummary,
   sanitizeText,
   ScreenShareState,
   SeatState,
+  UnoCard,
   validateExternalHttpUrl,
   Vec3,
   VideoControlPayload,
   VideoState,
 } from '@luma/shared';
+import {
+  applyGameAction,
+  createInitialRoomGames,
+  ServerRoomGames,
+} from './gameEngine.js';
 import { verifyPasswordScrypt } from './auth.js';
 import {
   deleteChatMessageRecord,
@@ -56,6 +64,7 @@ export interface ActiveRoom {
   moderators: Set<string>;
   videoAllowedUserIds: Set<string>;
   videoDeniedUserIds: Set<string>;
+  games: ServerRoomGames;
 }
 
 export class RoomManager {
@@ -115,6 +124,7 @@ export class RoomManager {
       moderators: new Set(),
       videoAllowedUserIds: new Set(),
       videoDeniedUserIds: new Set(),
+      games: createInitialRoomGames(),
     };
 
     this.rooms.set(active.summary.id, active);
@@ -270,6 +280,9 @@ export class RoomManager {
     if (!player) return null;
 
     const seatsChanged = this.releasePlayerSeat(room, socketId);
+    applyGameAction(room.games, player, { game: 'chess', op: 'leave' });
+    applyGameAction(room.games, player, { game: 'uno', op: 'leave' });
+    applyGameAction(room.games, player, { game: 'monopoly', op: 'leave' });
     let screenShareStopped = false;
     if (room.screenShare.active && room.screenShare.sharerId === socketId) {
       room.screenShare = { active: false, sharerId: null, sharerName: null };
@@ -1131,6 +1144,43 @@ export class RoomManager {
     };
   }
 
+  handleGameAction(
+    socketId: string,
+    payload: GameActionPayload,
+  ):
+    | {
+        ok: true;
+        room: ActiveRoom;
+        games: RoomGamesState;
+        handUpdates: Array<{ playerId: string; cards: UnoCard[] }>;
+      }
+    | { ok: false; error: string } {
+    const room = this.getRoomBySocket(socketId);
+    if (!room) return { ok: false, error: 'Odada değilsiniz.' };
+    const actor = room.players.get(socketId);
+    if (!actor) return { ok: false, error: 'Oyuncu bulunamadı.' };
+
+    const res = applyGameAction(room.games, actor, payload);
+    if (!res.ok) return res;
+
+    const handUpdates: Array<{ playerId: string; cards: UnoCard[] }> = [];
+    if (res.handPlayerIds) {
+      for (const pid of res.handPlayerIds) {
+        handUpdates.push({
+          playerId: pid,
+          cards: [...(room.games.unoHands.get(pid) || [])],
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      room,
+      games: room.games.publicState,
+      handUpdates,
+    };
+  }
+
   buildSnapshot(room: ActiveRoom): RoomStateSnapshot {
     return {
       room: {
@@ -1146,6 +1196,7 @@ export class RoomManager {
       queue: room.queue,
       chatHistory: room.chatHistory,
       mutedChatUserIds: Array.from(room.mutedChatUserIds),
+      games: room.games.publicState,
       serverTime: Date.now(),
     };
   }

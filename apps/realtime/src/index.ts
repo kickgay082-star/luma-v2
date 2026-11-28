@@ -451,6 +451,23 @@ export function createRealtimeServer(options?: {
       ack?.({ ok: true });
     });
 
+    socket.on('game:action', (payload, ack) => {
+      if (!rateLimiter.consume(`${socket.id}:game`, 12, 4)) {
+        ack?.({ ok: false, error: 'Çok sık oyun hamlesi.' });
+        return;
+      }
+      const res = roomManager.handleGameAction(socket.id, payload);
+      if (!res.ok) {
+        ack?.({ ok: false, error: res.error });
+        return;
+      }
+      io.to(res.room.summary.id).emit('game:synced', res.games);
+      for (const h of res.handUpdates) {
+        io.to(h.playerId).emit('game:uno_hand', h.cards);
+      }
+      ack?.({ ok: true });
+    });
+
     const handleDisconnect = () => {
       rateLimiter.clearPrefix(`${socket.id}:`);
       const res = roomManager.leaveRoom(socket.id);
@@ -461,6 +478,7 @@ export function createRealtimeServer(options?: {
         playerId: socket.id,
         userId: res.leftPlayer.userId,
       });
+      io.to(res.room.summary.id).emit('game:synced', res.room.games.publicState);
       if (res.seatsChanged) {
         io.to(res.room.summary.id).emit('seats:synced', res.room.seats);
       }

@@ -43,38 +43,38 @@ const CUE_RULES: Array<{
 }> = [
   {
     pattern:
-      /\b(water|ocean|sea|wave|tsunami|swim|dive|underwater|splash|river|flood|aqua|pool|ship|titanic|submarine|su|deniz|okyanus|dalga|sel|yüz|dalış|gemi|nehir|şelale)\b/i,
+      /(water|ocean|sea|wave|tsunami|swim|dive|underwater|splash|river|flood|aqua|pool|ship|titanic|submarine|waterfall|su\b|deniz|okyanus|dalga|sel\b|yüzme|dalış|gemi|nehir|şelale|havuz|yağmurdan|batık)/i,
     label: 'Su & Dalga',
-    effects: { water: 0.82, wind: 0.25, shake: 0.28, ambilightColor: '#0EA5E9' },
+    effects: { water: 0.88, wind: 0.35, shake: 0.35, ambilightColor: '#0EA5E9' },
   },
   {
     pattern:
-      /\b(rain|storm|thunder|lightning|hurricane|tornado|tempest|wet|yağmur|fırtına|şimşek|gök gürültüsü|kasırga|sağanak)\b/i,
+      /(rain|storm|thunder|lightning|hurricane|tornado|tempest|wet|yağmur|fırtına|şimşek|gök gürültüsü|kasırga|sağanak|gökgürültü|korku|horror|scary)/i,
     label: 'Fırtına & Şimşek',
     effects: {
-      rain: 0.88,
-      water: 0.35,
+      rain: 0.9,
+      water: 0.4,
       wind: 0.65,
-      lightning: 0.85,
-      shake: 0.45,
+      lightning: 0.9,
+      shake: 0.5,
       ambilightColor: '#38BDF8',
     },
   },
   {
     pattern:
-      /\b(fire|flame|burn|explosion|explode|bomb|blast|volcano|lava|inferno|boom|rocket|shoot|gun|ateş|alev|yan|patlama|bomba|volkan|lav)\b/i,
+      /(fire|flame|burn|explosion|explode|bomb|blast|volcano|lava|inferno|boom|rocket|shoot|gun|action|war|fight|aksiyon|savaş|kavga|ateş|alev|yangın|patlama|bomba|volkan|lav|silah|fragman|trailer)/i,
     label: 'Alev & Patlama',
-    effects: { fire: 0.9, shake: 0.85, wind: 0.45, ambilightColor: '#F97316' },
+    effects: { fire: 0.9, shake: 0.85, wind: 0.5, ambilightColor: '#F97316' },
   },
   {
     pattern:
-      /\b(snow|ice|winter|blizzard|freeze|frost|cold|arctic|glacier|kar|buz|kış|tipi|don|soğuk)\b/i,
+      /(snow|ice|winter|blizzard|freeze|frost|cold|arctic|glacier|kar\b|buz\b|kış\b|tipi|don\b|soğuk|buzul)/i,
     label: 'Kar & Tipi',
-    effects: { snow: 0.88, wind: 0.55, ambilightColor: '#BAE6FD' },
+    effects: { snow: 0.9, wind: 0.55, ambilightColor: '#BAE6FD' },
   },
   {
     pattern:
-      /\b(coaster|roller|speed|fast|race|drift|chase|crash|earthquake|fall|fly|jet|space|4dx|4d|hız|yarış|kovalamaca|kaza|deprem|uçuş|lunapark|hız treni)\b/i,
+      /(coaster|roller|speed|fast|race|drift|chase|crash|earthquake|fall|fly|jet|space|4dx|4d|music|clip|klip|şarkı|rap|concert|konser|hız|yarış|kovalamaca|kaza|deprem|uçuş|lunapark|araba|motor)/i,
     label: 'Hız & Sarsıntı',
     effects: { wind: 0.85, shake: 0.72, ambilightColor: '#A855F7' },
   },
@@ -105,4 +105,84 @@ export function matchFourDEffectsFromText(text: string): {
 
   if (labels.length === 0) return null;
   return { label: labels.slice(0, 2).join(' · '), effects: combined };
+}
+
+/**
+ * Generates timed dynamic 4DX cues when YouTube doesn't expose subtitles or
+ * doesn't list explicit environment words in the title, so 4D Mode always stays alive.
+ */
+export function buildProceduralFourDCues(
+  base: Partial<FourDEffects>,
+  biomeLabel: string,
+): FourDTimelineCue[] {
+  const cues: FourDTimelineCue[] = [];
+  const hasWater = (base.water || 0) > 0.2;
+  const hasFire = (base.fire || 0) > 0.2;
+  const hasRain = (base.rain || 0) > 0.2;
+  const hasSnow = (base.snow || 0) > 0.2;
+
+  for (let sec = 4; sec < 1200; sec += 14) {
+    const phase = (sec / 14) % 4;
+    if (hasWater) {
+      cues.push({
+        at: sec,
+        dur: 6,
+        label: phase % 2 === 0 ? 'Dev Dalga!' : 'Su Sıçraması',
+        effects: { water: 0.95, wind: 0.5, shake: 0.55, ambilightColor: '#0EA5E9' },
+      });
+    } else if (hasFire) {
+      cues.push({
+        at: sec,
+        dur: 5,
+        label: phase % 2 === 0 ? 'Patlama Şoku!' : 'Alev Dalgası',
+        effects: { fire: 0.95, shake: 0.9, wind: 0.6, ambilightColor: '#F97316' },
+      });
+    } else if (hasRain) {
+      cues.push({
+        at: sec,
+        dur: 5,
+        label: 'Şimşek & Gök Gürültüsü',
+        effects: { rain: 0.95, lightning: 0.95, shake: 0.65, water: 0.45, ambilightColor: '#38BDF8' },
+      });
+    } else if (hasSnow) {
+      cues.push({
+        at: sec,
+        dur: 6,
+        label: 'Soğuk Rüzgar Tipisi',
+        effects: { snow: 0.95, wind: 0.8, shake: 0.2, ambilightColor: '#BAE6FD' },
+      });
+    } else {
+      // Dynamic multi-sensory 4DX cycle for generic YouTube videos (music, clips, scenes)
+      if (phase === 0) {
+        cues.push({
+          at: sec,
+          dur: 5,
+          label: `${biomeLabel} · Rüzgar & Sarsıntı`,
+          effects: { wind: 0.75, shake: 0.55, ambilightColor: '#7C5CFF' },
+        });
+      } else if (phase === 1) {
+        cues.push({
+          at: sec,
+          dur: 5,
+          label: '4D Su & Yağmur Dalgası',
+          effects: { rain: 0.65, water: 0.5, wind: 0.45, ambilightColor: '#38BDF8' },
+        });
+      } else if (phase === 2) {
+        cues.push({
+          at: sec,
+          dur: 4.5,
+          label: '4D Alev & Bas Titreşimi',
+          effects: { fire: 0.72, shake: 0.68, wind: 0.4, ambilightColor: '#FB923C' },
+        });
+      } else {
+        cues.push({
+          at: sec,
+          dur: 5,
+          label: '4D Şimşek & Hız',
+          effects: { lightning: 0.85, shake: 0.62, wind: 0.8, ambilightColor: '#A855F7' },
+        });
+      }
+    }
+  }
+  return cues;
 }

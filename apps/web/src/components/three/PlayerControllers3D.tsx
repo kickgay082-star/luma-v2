@@ -370,9 +370,9 @@ export function LocalPlayerController({
       camera.lookAt(lookAhead);
     }
 
-    // 4DX Motion Seat & Camera Shake / Wave Sway
+    // 4DX Motion Seat & Camera Shake / Wave Sway (only active in 4D Sinema mode)
     const fourD = useFourDStore.getState();
-    if (fourD.enabled) {
+    if (customization.experienceMode === '4d' && fourD.enabled) {
       const sLevel = Math.min(1.5, fourD.current.shake * fourD.intensity);
       const wLevel = Math.min(1.2, fourD.current.water * fourD.intensity);
       const t4 = clock.elapsedTime;

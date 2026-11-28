@@ -10,11 +10,13 @@ import {
   PlayerState,
   QueueItem,
   RoomCustomization,
+  RoomGamesState,
   RoomStateSnapshot,
   RoomSummary,
   ScreenShareState,
   SeatState,
   SpatialVoiceSettings,
+  UnoCard,
   Vec3,
   VideoState,
 } from '@luma/shared';
@@ -60,6 +62,8 @@ interface LumaStoreState {
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   mutedChatUserIds: string[];
+  games: RoomGamesState | null;
+  unoHand: UnoCard[];
 
   // Client-local spatial audio & social controls
   micEnabled: boolean;
@@ -112,6 +116,8 @@ interface LumaStoreState {
   updateChatMessage: (msg: ChatMessage) => void;
   deleteChatMessage: (messageId: string) => void;
   clearChat: () => void;
+  setGames: (games: RoomGamesState) => void;
+  setUnoHand: (cards: UnoCard[]) => void;
 
   setLocalVoice: (micEnabled: boolean, isSpeaking: boolean, audioLevel: number) => void;
   setPeerVolume: (userId: string, volume: number) => void;
@@ -154,6 +160,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
   queue: [],
   chatHistory: [],
   mutedChatUserIds: [],
+  games: null,
+  unoHand: [],
 
   micEnabled: false,
   localSpeaking: false,
@@ -217,6 +225,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
       queue: snapshot.queue,
       chatHistory: snapshot.chatHistory,
       mutedChatUserIds: snapshot.mutedChatUserIds,
+      games: snapshot.games ?? null,
+      unoHand: [],
     });
   },
 
@@ -234,6 +244,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
       screenShareStream: null,
       queue: [],
       chatHistory: [],
+      games: null,
+      unoHand: [],
       micEnabled: false,
       localSpeaking: false,
       localAudioLevel: 0,
@@ -341,6 +353,8 @@ export const useLumaStore = create<LumaStoreState>((set) => ({
     })),
 
   clearChat: () => set({ chatHistory: [] }),
+  setGames: (games) => set({ games }),
+  setUnoHand: (unoHand) => set({ unoHand }),
 
   setLocalVoice: (micEnabled, localSpeaking, localAudioLevel) =>
     set((s) => ({

@@ -1,4 +1,5 @@
 import {
+  BoardGameId,
   ColliderBox,
   RoomCustomization,
   RoomThemeId,
@@ -359,9 +360,80 @@ function generateSeatsForLayout(
   return seats;
 }
 
+export interface BackRoomStation {
+  id: BoardGameId;
+  name: string;
+  subtitle: string;
+  position: Vec3;
+  accent: string;
+}
+
+export interface BackRoomLayout {
+  archZ: number;
+  backMaxZ: number;
+  backHalfW: number;
+  doorHalfW: number;
+  stations: BackRoomStation[];
+}
+
+export function getBackRoomLayout(themeId: RoomThemeId): BackRoomLayout {
+  const meta = ROOM_THEMES[themeId] ?? ROOM_THEMES['premium-cinema'];
+  const archZ = meta.bounds.maxZ;
+  const backMaxZ = archZ + 9.0;
+  const backZ = archZ + 4.8;
+  return {
+    archZ,
+    backMaxZ,
+    backHalfW: 9.6,
+    doorHalfW: 3.1,
+    stations: [
+      {
+        id: 'chess',
+        name: 'Satranç Masası',
+        subtitle: '2 Kişilik Strateji',
+        position: [-5.2, 0, backZ],
+        accent: '#F59E0B',
+      },
+      {
+        id: 'uno',
+        name: 'UNO Masası',
+        subtitle: '2–6 Kişilik Kart Oyunu',
+        position: [0, 0, backZ + 0.5],
+        accent: '#EF4444',
+      },
+      {
+        id: 'monopoly',
+        name: 'Monopoly Masası',
+        subtitle: '2–4 Kişilik Emlak Ticareti',
+        position: [5.2, 0, backZ],
+        accent: '#10B981',
+      },
+    ],
+  };
+}
+
+export function findNearestGameStation(
+  playerPos: Vec3,
+  themeId: RoomThemeId,
+  maxDistance: number = 2.6,
+): BackRoomStation | null {
+  const { stations } = getBackRoomLayout(themeId);
+  let best: BackRoomStation | null = null;
+  let bestDist = Infinity;
+  for (const st of stations) {
+    const dist = Math.hypot(playerPos[0] - st.position[0], playerPos[2] - st.position[2]);
+    if (dist <= maxDistance && dist < bestDist) {
+      best = st;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
 export interface RoomGeometry {
   meta: RoomThemeMeta;
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
+  backRoom: BackRoomLayout;
   seats: SeatState[];
   colliders: ColliderBox[];
 }
@@ -372,11 +444,18 @@ export function buildRoomGeometry(
 ): RoomGeometry {
   const meta = ROOM_THEMES[themeId] ?? ROOM_THEMES['premium-cinema'];
   const seats = generateSeatsForLayout(customization.seatLayout, meta.seatVisualType);
-  const b = meta.bounds;
+  const backRoom = getBackRoomLayout(themeId);
+  const b = {
+    minX: meta.bounds.minX,
+    maxX: meta.bounds.maxX,
+    minZ: meta.bounds.minZ,
+    maxZ: backRoom.backMaxZ,
+  };
+  const archZ = backRoom.archZ;
   const wallThickness = 0.6;
 
   const colliders: ColliderBox[] = [
-    // Perimeter walls
+    // Main cinema perimeter walls
     {
       id: 'wall-north',
       minX: b.minX - wallThickness,
@@ -385,12 +464,21 @@ export function buildRoomGeometry(
       maxZ: b.minZ + 0.15,
       kind: 'wall',
     },
+    // Archway divider between cinema hall and back game room (open center |x| <= 3.1)
     {
-      id: 'wall-south',
+      id: 'arch-wall-left',
       minX: b.minX - wallThickness,
+      maxX: -backRoom.doorHalfW,
+      minZ: archZ - 0.25,
+      maxZ: archZ + 0.25,
+      kind: 'wall',
+    },
+    {
+      id: 'arch-wall-right',
+      minX: backRoom.doorHalfW,
       maxX: b.maxX + wallThickness,
-      minZ: b.maxZ - 0.15,
-      maxZ: b.maxZ + wallThickness,
+      minZ: archZ - 0.25,
+      maxZ: archZ + 0.25,
       kind: 'wall',
     },
     {
@@ -398,7 +486,7 @@ export function buildRoomGeometry(
       minX: b.minX - wallThickness,
       maxX: b.minX + 0.15,
       minZ: b.minZ,
-      maxZ: b.maxZ,
+      maxZ: archZ,
       kind: 'wall',
     },
     {
@@ -406,7 +494,32 @@ export function buildRoomGeometry(
       minX: b.maxX - 0.15,
       maxX: b.maxX + wallThickness,
       minZ: b.minZ,
-      maxZ: b.maxZ,
+      maxZ: archZ,
+      kind: 'wall',
+    },
+    // Back Game Room walls
+    {
+      id: 'back-wall-west',
+      minX: b.minX - wallThickness,
+      maxX: -backRoom.backHalfW + 0.15,
+      minZ: archZ,
+      maxZ: backRoom.backMaxZ + wallThickness,
+      kind: 'wall',
+    },
+    {
+      id: 'back-wall-east',
+      minX: backRoom.backHalfW - 0.15,
+      maxX: b.maxX + wallThickness,
+      minZ: archZ,
+      maxZ: backRoom.backMaxZ + wallThickness,
+      kind: 'wall',
+    },
+    {
+      id: 'back-wall-south',
+      minX: b.minX - wallThickness,
+      maxX: b.maxX + wallThickness,
+      minZ: backRoom.backMaxZ - 0.15,
+      maxZ: backRoom.backMaxZ + wallThickness,
       kind: 'wall',
     },
     // Cinema stage / screen platform collider
@@ -419,6 +532,17 @@ export function buildRoomGeometry(
       kind: 'screen',
     },
   ];
+
+  for (const st of backRoom.stations) {
+    colliders.push({
+      id: `game-table-${st.id}`,
+      minX: st.position[0] - 0.95,
+      maxX: st.position[0] + 0.95,
+      minZ: st.position[2] - 0.95,
+      maxZ: st.position[2] + 0.95,
+      kind: 'decor',
+    });
+  }
 
   // Add physical collision boxes for each seat so avatars walk around chairs cleanly
   for (const seat of seats) {
@@ -480,6 +604,7 @@ export function buildRoomGeometry(
   return {
     meta,
     bounds: b,
+    backRoom,
     seats,
     colliders,
   };

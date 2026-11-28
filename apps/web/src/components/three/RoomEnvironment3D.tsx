@@ -1,8 +1,9 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Stars } from '@react-three/drei';
+import { Html, Stars } from '@react-three/drei';
 import {
+  BoardGameId,
   buildRoomGeometry,
   GraphicsQuality,
   RoomCustomization,
@@ -18,6 +19,7 @@ interface RoomEnvironment3DProps {
   seats: SeatState[];
   nearestSeatId: string | null;
   localSeatedSeatId: string | null;
+  nearestGameId?: BoardGameId | null;
   video: VideoState | null;
   graphicsQuality: GraphicsQuality;
   screenVolume: number;
@@ -32,6 +34,7 @@ interface RoomEnvironment3DProps {
     playbackRate?: number;
   }) => void;
   onClaimSeat: (seatId: string) => void;
+  onOpenGameStation?: (gameId: BoardGameId) => void;
   onVideoEnded?: () => void;
 }
 
@@ -40,6 +43,7 @@ export function RoomEnvironment3D({
   seats,
   nearestSeatId,
   localSeatedSeatId,
+  nearestGameId = null,
   video,
   graphicsQuality,
   screenVolume,
@@ -50,6 +54,7 @@ export function RoomEnvironment3D({
   canControlVideo = true,
   onPlayerSyncAction,
   onClaimSeat,
+  onOpenGameStation,
   onVideoEnded,
 }: RoomEnvironment3DProps) {
   const geometry = useMemo(
@@ -59,6 +64,9 @@ export function RoomEnvironment3D({
 
   const meta = geometry.meta;
   const bounds = geometry.bounds;
+  const backRoom = geometry.backRoom;
+  const cinemaD = backRoom.archZ - bounds.minZ;
+  const cinemaCenterZ = (bounds.minZ + backRoom.archZ) / 2;
   const roomW = bounds.maxX - bounds.minX;
   const roomD = bounds.maxZ - bounds.minZ;
   const screenW = meta.screen.baseWidth * customization.screenScale;
@@ -68,52 +76,55 @@ export function RoomEnvironment3D({
   const theme = customization.theme;
   const isOpenAir = theme === 'beach-house' || theme === 'space-room' || theme === 'neon-city';
   const hasCeiling = !isOpenAir && theme !== 'luxury-home';
+  const is4DMode = customization.experienceMode === '4d';
 
   return (
     <group>
       <color attach="background" args={[meta.skyColor]} />
-      <fog attach="fog" args={[meta.fogColor, isOpenAir ? 24 : 16, isOpenAir ? 85 : 46]} />
+      <fog attach="fog" args={[meta.fogColor, isOpenAir ? 34 : 24, isOpenAir ? 105 : 68]} />
 
-      {/* Core Lighting Rig */}
-      <ambientLight intensity={customization.ambientIntensity} color={theme === 'beach-house' ? '#FFE8C8' : '#D8DCFF'} />
+      {/* Bright, Clear Cinema & Social Lighting Rig */}
+      <ambientLight
+        intensity={Math.max(0.85, customization.ambientIntensity * 1.45)}
+        color={theme === 'beach-house' ? '#FFF1DC' : '#E2E8F0'}
+      />
+      <hemisphereLight args={['#E2E8F0', '#334155', 0.72]} />
       <directionalLight
         position={[6, 14, 8]}
-        intensity={theme === 'beach-house' ? 1.15 : theme === 'luxury-home' ? 0.95 : 0.75}
+        intensity={theme === 'beach-house' ? 1.45 : theme === 'luxury-home' ? 1.25 : 1.15}
         castShadow={shadows}
         shadow-mapSize={graphicsQuality === 'high' ? [2048, 2048] : [1024, 1024]}
-        shadow-camera-left={-16}
-        shadow-camera-right={16}
-        shadow-camera-top={16}
-        shadow-camera-bottom={-16}
-        color={theme === 'beach-house' ? '#FDE68A' : '#E5E7EB'}
+        shadow-camera-left={-18}
+        shadow-camera-right={18}
+        shadow-camera-top={22}
+        shadow-camera-bottom={-18}
+        color={theme === 'beach-house' ? '#FDE68A' : '#F8FAFC'}
       />
+      {/* Warm Overhead Seating & Lounge Fill Lights */}
+      <pointLight position={[0, 7.0, 2]} intensity={1.7} distance={26} color="#E0E7FF" />
+      <pointLight position={[-8, 5, 4]} intensity={1.5} distance={26} color={customization.lightColor} />
+      <pointLight position={[8, 5, 4]} intensity={1.5} distance={26} color={customization.lightColor} />
       <pointLight
-        position={[-8, 5, 4]}
-        intensity={1.3}
+        position={[0, 6.4, backRoom.archZ + 4.8]}
+        intensity={2.4}
         distance={24}
-        color={customization.lightColor}
-      />
-      <pointLight
-        position={[8, 5, 4]}
-        intensity={1.3}
-        distance={24}
-        color={customization.lightColor}
+        color="#F8FAFC"
       />
 
-      {/* Main Walkable Floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[roomW, roomD]} />
+      {/* Main Walkable Floor (Cinema Hall) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, cinemaCenterZ]} receiveShadow>
+        <planeGeometry args={[roomW, cinemaD]} />
         <meshStandardMaterial
           color={
             theme === 'beach-house'
-              ? '#7C5A3A'
+              ? '#8C6743'
               : theme === 'luxury-home'
-                ? '#2E2836'
+                ? '#362F40'
                 : theme === 'modern-lounge'
-                  ? '#3A2C23'
+                  ? '#47362B'
                   : meta.floorColor
           }
-          roughness={theme === 'luxury-home' ? 0.35 : 0.85}
+          roughness={theme === 'luxury-home' ? 0.35 : 0.82}
           metalness={theme === 'luxury-home' ? 0.22 : 0.08}
         />
       </mesh>
@@ -158,33 +169,43 @@ export function RoomEnvironment3D({
         />
       </mesh>
 
-      {/* Enclosed Room Walls (hidden for open-air Beach, Space, Penthouse Neon-City) */}
+      {/* Enclosed Cinema Hall Walls + Open Central Archway to Back Game Lounge */}
       {!isOpenAir && (
         <group>
           <mesh position={[0, 4.2, bounds.minZ]} receiveShadow>
             <boxGeometry args={[roomW, 8.4, 0.35]} />
-            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
           </mesh>
-          <mesh position={[0, 4.2, bounds.maxZ]} receiveShadow>
-            <boxGeometry args={[roomW, 8.4, 0.35]} />
-            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          {/* Partition Wall Left & Right leaving central doorway (|x| <= 3.1) */}
+          <mesh position={[(-roomW / 2 - backRoom.doorHalfW) / 2, 4.2, backRoom.archZ]} receiveShadow>
+            <boxGeometry args={[roomW / 2 - backRoom.doorHalfW, 8.4, 0.35]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
           </mesh>
-          <mesh position={[bounds.minX, 4.2, 0]} receiveShadow>
-            <boxGeometry args={[0.35, 8.4, roomD]} />
-            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          <mesh position={[(roomW / 2 + backRoom.doorHalfW) / 2, 4.2, backRoom.archZ]} receiveShadow>
+            <boxGeometry args={[roomW / 2 - backRoom.doorHalfW, 8.4, 0.35]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
           </mesh>
-          <mesh position={[bounds.maxX, 4.2, 0]} receiveShadow>
-            <boxGeometry args={[0.35, 8.4, roomD]} />
-            <meshStandardMaterial color={meta.wallColor} roughness={0.82} />
+          {/* Header beam above archway */}
+          <mesh position={[0, 6.2, backRoom.archZ]} receiveShadow>
+            <boxGeometry args={[backRoom.doorHalfW * 2, 4.4, 0.35]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
+          </mesh>
+          <mesh position={[bounds.minX, 4.2, cinemaCenterZ]} receiveShadow>
+            <boxGeometry args={[0.35, 8.4, cinemaD]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
+          </mesh>
+          <mesh position={[bounds.maxX, 4.2, cinemaCenterZ]} receiveShadow>
+            <boxGeometry args={[0.35, 8.4, cinemaD]} />
+            <meshStandardMaterial color={meta.wallColor} roughness={0.8} />
           </mesh>
         </group>
       )}
 
       {/* Ceiling */}
       {hasCeiling && (
-        <mesh position={[0, 8.4, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[roomW, roomD]} />
-          <meshStandardMaterial color={theme === 'minimalist' ? '#171920' : '#07080C'} roughness={0.9} />
+        <mesh position={[0, 8.4, cinemaCenterZ]} rotation={[Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[roomW, cinemaD]} />
+          <meshStandardMaterial color={theme === 'minimalist' ? '#1E212B' : '#0E1018'} roughness={0.88} />
         </mesh>
       )}
 
@@ -280,8 +301,24 @@ export function RoomEnvironment3D({
         onVideoEnded={onVideoEnded}
       />
 
-      {/* 4DX Physical Immersion Effects (Water, Rain, Fire, Snow, Wind, Lightning, Ambilight) */}
-      <Effects4D3D roomW={roomW} roomD={roomD} screenZ={meta.screen.position[2]} />
+      {/* 4DX Physical Immersion Effects (only active when room is in 4D Mode) */}
+      {is4DMode && (
+        <Effects4D3D roomW={roomW} roomD={roomD} screenZ={meta.screen.position[2]} />
+      )}
+
+      {/* Illuminated Back Game Lounge ("Arka Oyun Salonu": Chess, UNO, Monopoly) */}
+      <BackGameLounge3D
+        archZ={backRoom.archZ}
+        backMaxZ={backRoom.backMaxZ}
+        backHalfW={backRoom.backHalfW}
+        doorHalfW={backRoom.doorHalfW}
+        stations={backRoom.stations}
+        nearestGameId={nearestGameId}
+        accentColor={customization.lightColor}
+        wallColor={meta.wallColor}
+        isOpenAir={isOpenAir}
+        onOpenGameStation={onOpenGameStation}
+      />
 
       {/* Interactive Physical 3D Seats */}
       {seats.map((seat) => (
@@ -501,15 +538,15 @@ function ThemeSpecificBackdrop({
           </mesh>
         ))}
 
-        {/* Arched Moonlit Villa Windows along Rear Corners */}
-        {[-6.8, 6.8].map((wx, idx) => (
-          <group key={idx} position={[wx, 4.4, 11.78]}>
+        {/* Arched Moonlit Villa Windows flanking rear archway */}
+        {[-7.2, 7.2].map((wx, idx) => (
+          <group key={idx} position={[wx, 4.2, 10.78]}>
             <mesh>
-              <boxGeometry args={[3.2, 4.4, 0.14]} />
+              <boxGeometry args={[3.0, 4.2, 0.14]} />
               <meshStandardMaterial color="#0D192B" emissive="#1E3A8A" emissiveIntensity={0.45} />
             </mesh>
             <mesh position={[0, 0, -0.08]}>
-              <boxGeometry args={[3.45, 4.65, 0.06]} />
+              <boxGeometry args={[3.25, 4.45, 0.06]} />
               <meshStandardMaterial color="#D4AF37" metalness={0.7} roughness={0.3} />
             </mesh>
           </group>
@@ -589,22 +626,24 @@ function ThemeSpecificBackdrop({
           <meshStandardMaterial color="#2E3240" roughness={0.95} />
         </mesh>
 
-        {/* Warm Low Bookshelf & Console on Back Wall */}
-        <group position={[0, 0, 11.1]}>
-          <mesh position={[0, 1.05, 0]} castShadow>
-            <boxGeometry args={[7.2, 2.1, 0.7]} />
-            <meshStandardMaterial color="#4A3222" roughness={0.75} />
-          </mesh>
-          {[-2.4, -0.8, 0.8, 2.4].map((bx, i) => (
-            <mesh key={i} position={[bx, 1.45, -0.05]}>
-              <boxGeometry args={[1.1, 0.45, 0.5]} />
-              <meshStandardMaterial
-                color={i % 2 === 0 ? '#D4A373' : '#7C5CFF'}
-                roughness={0.65}
-              />
+        {/* Warm Bookshelves flanking rear archway (keeps center walkthrough open) */}
+        {[-7.4, 7.4].map((sideX, sIdx) => (
+          <group key={sIdx} position={[sideX, 0, 10.9]}>
+            <mesh position={[0, 1.05, 0]} castShadow>
+              <boxGeometry args={[3.4, 2.1, 0.65]} />
+              <meshStandardMaterial color="#4A3222" roughness={0.75} />
             </mesh>
-          ))}
-        </group>
+            {[-0.8, 0.8].map((bx, i) => (
+              <mesh key={i} position={[bx, 1.45, -0.05]}>
+                <boxGeometry args={[0.9, 0.45, 0.45]} />
+                <meshStandardMaterial
+                  color={(i + sIdx) % 2 === 0 ? '#D4A373' : '#7C5CFF'}
+                  roughness={0.65}
+                />
+              </mesh>
+            ))}
+          </group>
+        ))}
 
         {/* Warm Wood Slat Accents & Tall Loft Windows */}
         {[-11.75, 11.75].map((xPos, side) => (
@@ -813,6 +852,208 @@ function ThemeSpecificBackdrop({
           </mesh>
         </group>
       ))}
+    </group>
+  );
+}
+
+function BackGameLounge3D({
+  archZ,
+  backMaxZ,
+  backHalfW,
+  doorHalfW,
+  stations,
+  nearestGameId,
+  accentColor,
+  wallColor,
+  isOpenAir,
+  onOpenGameStation,
+}: {
+  archZ: number;
+  backMaxZ: number;
+  backHalfW: number;
+  doorHalfW: number;
+  stations: Array<{
+    id: BoardGameId;
+    name: string;
+    subtitle: string;
+    position: [number, number, number];
+    accent: string;
+  }>;
+  nearestGameId: BoardGameId | null;
+  accentColor: string;
+  wallColor: string;
+  isOpenAir: boolean;
+  onOpenGameStation?: (gameId: BoardGameId) => void;
+}) {
+  const depth = backMaxZ - archZ;
+  const centerZ = (archZ + backMaxZ) / 2;
+
+  return (
+    <group>
+      {/* Back Lounge Floor */}
+      <mesh position={[0, 0.005, centerZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[backHalfW * 2, depth]} />
+        <meshStandardMaterial color="#1C2030" roughness={0.75} metalness={0.12} />
+      </mesh>
+      {/* Plush Carpet Strip */}
+      <mesh position={[0, 0.014, centerZ + 0.3]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[backHalfW * 1.6, depth * 0.72]} />
+        <meshStandardMaterial color="#25293E" roughness={0.92} />
+      </mesh>
+
+      {/* Neon Doorway Archway Trim + Signage */}
+      <group position={[0, 0, archZ]}>
+        <mesh position={[-doorHalfW, 2.0, 0]}>
+          <boxGeometry args={[0.16, 4.0, 0.45]} />
+          <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.8} />
+        </mesh>
+        <mesh position={[doorHalfW, 2.0, 0]}>
+          <boxGeometry args={[0.16, 4.0, 0.45]} />
+          <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.8} />
+        </mesh>
+        <mesh position={[0, 4.0, 0]}>
+          <boxGeometry args={[doorHalfW * 2 + 0.2, 0.16, 0.45]} />
+          <meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.8} />
+        </mesh>
+        <Html position={[0, 4.55, 0]} center distanceFactor={11}>
+          <div className="pointer-events-none whitespace-nowrap rounded-full border border-[#7C5CFF]/50 bg-[#0B0D14]/90 px-4 py-1 text-xs font-bold tracking-wider text-white shadow-lg">
+            OYUN SALONU · SATRANÇ · UNO · MONOPOLY
+          </div>
+        </Html>
+      </group>
+
+      {/* Enclosed Back Lounge Side/Rear Walls & Ceiling */}
+      {!isOpenAir && (
+        <group>
+          <mesh position={[-backHalfW, 3.4, centerZ]} receiveShadow>
+            <boxGeometry args={[0.35, 6.8, depth]} />
+            <meshStandardMaterial color={wallColor} roughness={0.78} />
+          </mesh>
+          <mesh position={[backHalfW, 3.4, centerZ]} receiveShadow>
+            <boxGeometry args={[0.35, 6.8, depth]} />
+            <meshStandardMaterial color={wallColor} roughness={0.78} />
+          </mesh>
+          <mesh position={[0, 3.4, backMaxZ]} receiveShadow>
+            <boxGeometry args={[backHalfW * 2, 6.8, 0.35]} />
+            <meshStandardMaterial color={wallColor} roughness={0.78} />
+          </mesh>
+          <mesh position={[0, 6.8, centerZ]} rotation={[Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[backHalfW * 2, depth]} />
+            <meshStandardMaterial color="#141724" roughness={0.85} />
+          </mesh>
+        </group>
+      )}
+
+      {/* Interactive 3D Game Tables (Chess, UNO, Monopoly) */}
+      {stations.map((st) => {
+        const active = st.id === nearestGameId;
+        return (
+          <group
+            key={st.id}
+            position={st.position}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenGameStation?.(st.id);
+            }}
+          >
+            {/* Table Pedestal & Surface */}
+            <mesh position={[0, 0.4, 0]} castShadow>
+              <cylinderGeometry args={[0.16, 0.28, 0.8, 14]} />
+              <meshStandardMaterial color="#27272A" metalness={0.5} roughness={0.4} />
+            </mesh>
+            <mesh position={[0, 0.84, 0]} castShadow receiveShadow>
+              <cylinderGeometry args={[0.92, 0.92, 0.09, 28]} />
+              <meshStandardMaterial color="#3F2E21" roughness={0.45} metalness={0.1} />
+            </mesh>
+            {/* Rim Glow Ring when player is near */}
+            <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[1.05, 1.18, 32]} />
+              <meshBasicMaterial color={active ? '#34D399' : st.accent} transparent opacity={active ? 0.9 : 0.4} />
+            </mesh>
+
+            {/* Game Props on Table Top */}
+            {st.id === 'chess' && (
+              <group position={[0, 0.9, 0]}>
+                <mesh>
+                  <boxGeometry args={[0.92, 0.03, 0.92]} />
+                  <meshStandardMaterial color="#E5E7EB" roughness={0.4} />
+                </mesh>
+                <mesh position={[0, 0.02, 0]}>
+                  <boxGeometry args={[0.8, 0.015, 0.8]} />
+                  <meshStandardMaterial color="#1E293B" roughness={0.5} />
+                </mesh>
+                {[-0.25, -0.08, 0.08, 0.25].map((px, i) => (
+                  <mesh key={i} position={[px, 0.08, -0.26]} castShadow>
+                    <cylinderGeometry args={[0.03, 0.045, 0.12, 8]} />
+                    <meshStandardMaterial color={i % 2 === 0 ? '#F8FAFC' : '#18181B'} />
+                  </mesh>
+                ))}
+              </group>
+            )}
+
+            {st.id === 'uno' && (
+              <group position={[0, 0.9, 0]}>
+                {[
+                  { pos: [-0.14, 0, -0.04], rot: 0.2, col: '#EF4444' },
+                  { pos: [0.1, 0.01, 0.05], rot: -0.35, col: '#3B82F6' },
+                  { pos: [-0.02, 0.02, 0.16], rot: 0.1, col: '#22C55E' },
+                  { pos: [0.16, 0.015, -0.14], rot: 0.5, col: '#EAB308' },
+                ].map((card, i) => (
+                  <mesh
+                    key={i}
+                    position={card.pos as [number, number, number]}
+                    rotation={[0, card.rot, 0]}
+                    castShadow
+                  >
+                    <boxGeometry args={[0.18, 0.025, 0.27]} />
+                    <meshStandardMaterial color={card.col} roughness={0.4} />
+                  </mesh>
+                ))}
+              </group>
+            )}
+
+            {st.id === 'monopoly' && (
+              <group position={[0, 0.9, 0]}>
+                <mesh>
+                  <boxGeometry args={[1.05, 0.03, 1.05]} />
+                  <meshStandardMaterial color="#DCFCE7" roughness={0.5} />
+                </mesh>
+                <mesh position={[0, 0.02, 0]}>
+                  <boxGeometry args={[0.72, 0.01, 0.72]} />
+                  <meshStandardMaterial color="#BBF7D0" roughness={0.6} />
+                </mesh>
+                {/* Dice & Miniature Houses */}
+                <mesh position={[-0.1, 0.06, 0.04]}>
+                  <boxGeometry args={[0.07, 0.07, 0.07]} />
+                  <meshStandardMaterial color="#FFFFFF" />
+                </mesh>
+                <mesh position={[0.08, 0.06, -0.05]}>
+                  <boxGeometry args={[0.07, 0.07, 0.07]} />
+                  <meshStandardMaterial color="#FFFFFF" />
+                </mesh>
+                <mesh position={[0.36, 0.06, 0.36]}>
+                  <boxGeometry args={[0.09, 0.08, 0.09]} />
+                  <meshStandardMaterial color="#EF4444" />
+                </mesh>
+              </group>
+            )}
+
+            <Html position={[0, 1.55, 0]} center distanceFactor={9}>
+              <button
+                type="button"
+                onClick={() => onOpenGameStation?.(st.id)}
+                className={`rounded-xl border px-3 py-1 text-xs font-semibold shadow-lg transition ${
+                  active
+                    ? 'border-emerald-400 bg-emerald-500 text-black'
+                    : 'border-white/20 bg-[#0B0D14]/90 text-white hover:border-[#7C5CFF]'
+                }`}
+              >
+                {st.name}
+              </button>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }

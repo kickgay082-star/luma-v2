@@ -5,9 +5,12 @@ import {
   PlayerTransformUpdate,
   QueueItem,
   RoomCustomization,
+  RoomGamesState,
   RoomStateSnapshot,
   ScreenShareState,
   SeatState,
+  UnoCard,
+  UnoColor,
   VideoSourceType,
   VideoState,
 } from '../types.js';
@@ -76,6 +79,25 @@ export type AdminActionType =
   | 'reset_video'
   | 'announce';
 
+export type GameActionPayload =
+  | {
+      game: 'chess';
+      op: 'join' | 'leave' | 'move' | 'reset';
+      side?: 'w' | 'b';
+      from?: number;
+      to?: number;
+    }
+  | {
+      game: 'uno';
+      op: 'join' | 'leave' | 'start' | 'play' | 'draw' | 'uno' | 'reset';
+      cardId?: string;
+      chosenColor?: Exclude<UnoColor, 'wild'>;
+    }
+  | {
+      game: 'monopoly';
+      op: 'join' | 'leave' | 'start' | 'roll' | 'buy' | 'build' | 'end_turn' | 'reset';
+    };
+
 export interface ClientToServerEvents {
   'room:join': (payload: JoinRoomPayload, ack: (res: JoinRoomAck) => void) => void;
   'room:leave': () => void;
@@ -118,6 +140,10 @@ export interface ClientToServerEvents {
     payload: { action: AdminActionType; message?: string },
     ack?: (res: { ok: boolean; error?: string }) => void,
   ) => void;
+  'game:action': (
+    payload: GameActionPayload,
+    ack?: (res: { ok: boolean; error?: string }) => void,
+  ) => void;
 }
 
 export interface ServerToClientEvents {
@@ -156,6 +182,8 @@ export interface ServerToClientEvents {
   'chat:updated': (msg: ChatMessage) => void;
   'chat:deleted': (messageId: string) => void;
   'chat:cleared': () => void;
+  'game:synced': (games: RoomGamesState) => void;
+  'game:uno_hand': (cards: UnoCard[]) => void;
   'mod:kicked': (reason: string) => void;
   'room:notice': (payload: { level: 'info' | 'warning' | 'error'; message: string }) => void;
 }

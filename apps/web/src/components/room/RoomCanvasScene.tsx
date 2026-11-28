@@ -3,6 +3,7 @@
 import { MutableRefObject } from 'react';
 import { Canvas } from '@react-three/fiber';
 import {
+  BoardGameId,
   GraphicsQuality,
   PlayerState,
   PlayerTransformUpdate,
@@ -26,6 +27,7 @@ interface RoomCanvasSceneProps {
   players: PlayerState[];
   localPlayer: PlayerState | null;
   nearestSeat: SeatState | null;
+  nearestGameId?: BoardGameId | null;
   video: VideoState | null;
   cameraMode: CameraMode;
   cameraZoom: number;
@@ -47,6 +49,7 @@ interface RoomCanvasSceneProps {
   onNearestSeatChange: (seat: SeatState | null) => void;
   onInteractSeat: (seat: SeatState | null) => void;
   onClaimSeat: (seatId: string) => void;
+  onOpenGameStation?: (gameId: BoardGameId) => void;
   onSelectRemotePlayer: (player: PlayerState) => void;
   onPlayerSyncAction?: (payload: {
     action: 'play' | 'pause' | 'seek' | 'rate';
@@ -63,6 +66,7 @@ export function RoomCanvasScene({
   players,
   localPlayer,
   nearestSeat,
+  nearestGameId = null,
   video,
   cameraMode,
   cameraZoom,
@@ -80,6 +84,7 @@ export function RoomCanvasScene({
   onNearestSeatChange,
   onInteractSeat,
   onClaimSeat,
+  onOpenGameStation,
   onSelectRemotePlayer,
   onPlayerSyncAction,
   onVideoEnded,
@@ -103,6 +108,7 @@ export function RoomCanvasScene({
         seats={seats}
         nearestSeatId={nearestSeat?.id ?? null}
         localSeatedSeatId={localPlayer?.seatedSeatId ?? null}
+        nearestGameId={nearestGameId}
         video={video}
         graphicsQuality={graphicsQuality}
         screenVolume={screenVolume}
@@ -113,6 +119,7 @@ export function RoomCanvasScene({
         canControlVideo={canControlVideo}
         onPlayerSyncAction={onPlayerSyncAction}
         onClaimSeat={onClaimSeat}
+        onOpenGameStation={onOpenGameStation}
         onVideoEnded={onVideoEnded}
       />
 

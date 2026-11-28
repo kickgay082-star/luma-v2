@@ -331,6 +331,8 @@ export interface SeatState {
   occupiedByName: string | null;
 }
 
+export type ExperienceMode = 'normal' | '4d';
+
 export interface RoomCustomization {
   theme: RoomThemeId;
   lightColor: string;
@@ -341,6 +343,7 @@ export interface RoomCustomization {
   ambientMusic: AmbientMusicPreset;
   locked: boolean;
   chatLocked?: boolean;
+  experienceMode?: ExperienceMode;
   maxUsers: number;
   spatialVoiceMaxDistance: number; // 8 - 30m, default 15
   voiceAcoustics: VoiceAcousticsPreset;
@@ -349,12 +352,13 @@ export interface RoomCustomization {
 export const DEFAULT_ROOM_CUSTOMIZATION: RoomCustomization = {
   theme: 'premium-cinema',
   lightColor: '#7C5CFF',
-  ambientIntensity: 0.45,
+  ambientIntensity: 0.65,
   screenScale: 1,
   seatLayout: 'theater',
   decorPreset: 'classic',
   ambientMusic: 'none',
   locked: false,
+  experienceMode: 'normal',
   maxUsers: 24,
   spatialVoiceMaxDistance: 15,
   voiceAcoustics: 'cinema-hall',
@@ -466,6 +470,86 @@ export interface ScreenShareState {
   sharerName: string | null;
 }
 
+export type BoardGameId = 'chess' | 'uno' | 'monopoly';
+
+export interface ChessGameState {
+  board: (string | null)[]; // 64 squares: 'wP','wR','wN','wB','wQ','wK','bP',...
+  turn: 'w' | 'b';
+  whiteId: string | null;
+  whiteName: string | null;
+  blackId: string | null;
+  blackName: string | null;
+  status: 'waiting' | 'playing' | 'finished';
+  winner: string | null;
+  lastMove: string | null;
+  capturedW: string[];
+  capturedB: string[];
+}
+
+export type UnoColor = 'red' | 'blue' | 'green' | 'yellow' | 'wild';
+
+export interface UnoCard {
+  id: string;
+  color: UnoColor;
+  value: string;
+}
+
+export interface UnoPlayerPublic {
+  playerId: string;
+  displayName: string;
+  cardCount: number;
+  calledUno: boolean;
+}
+
+export interface UnoGameState {
+  status: 'lobby' | 'playing' | 'finished';
+  players: UnoPlayerPublic[];
+  turnIndex: number;
+  direction: 1 | -1;
+  topCard: UnoCard | null;
+  activeColor: 'red' | 'blue' | 'green' | 'yellow';
+  deckCount: number;
+  winnerName: string | null;
+  lastEvent: string;
+}
+
+export interface MonopolySpace {
+  index: number;
+  name: string;
+  kind: 'go' | 'prop' | 'tax' | 'chance' | 'jail';
+  color?: string;
+  price?: number;
+  rent?: number;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  houses?: number;
+}
+
+export interface MonopolyPlayerState {
+  playerId: string;
+  displayName: string;
+  cash: number;
+  position: number;
+  color: string;
+  bankrupt: boolean;
+}
+
+export interface MonopolyGameState {
+  status: 'lobby' | 'playing' | 'finished';
+  players: MonopolyPlayerState[];
+  turnIndex: number;
+  lastDice: [number, number] | null;
+  board: MonopolySpace[];
+  winnerName: string | null;
+  lastEvent: string;
+}
+
+export interface RoomGamesState {
+  chess: ChessGameState;
+  uno: UnoGameState;
+  monopoly: MonopolyGameState;
+}
+
 export interface RoomStateSnapshot {
   room: RoomSummary;
   customization: RoomCustomization;
@@ -476,6 +560,7 @@ export interface RoomStateSnapshot {
   queue: QueueItem[];
   chatHistory: ChatMessage[];
   mutedChatUserIds: string[];
+  games?: RoomGamesState;
   serverTime: number;
 }
 

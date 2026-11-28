@@ -7,7 +7,9 @@ import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
 import {
   AdminActionType,
+  BoardGameId,
   ClientToServerEvents,
+  findNearestGameStation,
   PlayerState,
   PlayerTransformUpdate,
   ROOM_THEMES,
@@ -28,6 +30,7 @@ import {
   Copy,
   Crown,
   Eye,
+  Gamepad2,
   Globe,
   Lock,
   Maximize,
@@ -43,6 +46,8 @@ import {
   Radio,
   Settings,
   SkipForward,
+  Sparkles,
+  Tv,
   UserPlus,
   Users,
   Volume2,
@@ -60,6 +65,8 @@ import {
 import { CameraMode, MobileInputState } from '@/components/three/PlayerControllers3D';
 import { RoomHudDrawers, ActiveDrawer } from '@/components/room/RoomHudDrawers';
 import { FourDOverlay2D } from '@/components/room/FourDOverlay2D';
+import { TheaterVideoOverlay } from '@/components/room/TheaterVideoOverlay';
+import { BoardGamesModal } from '@/components/room/BoardGamesModal';
 import { WebBrowserModal } from '@/components/room/WebBrowserModal';
 import { Lite2DRoomView } from '@/components/room/Lite2DRoomView';
 import { SpatialVoiceEngine } from '@/lib/audio/SpatialVoiceEngine';
@@ -119,6 +126,8 @@ export default function RoomPage() {
   const screenShareStream = useLumaStore((s) => s.screenShareStream);
   const queue = useLumaStore((s) => s.queue);
   const chatHistory = useLumaStore((s) => s.chatHistory);
+  const games = useLumaStore((s) => s.games);
+  const unoHand = useLumaStore((s) => s.unoHand);
   const micEnabled = useLumaStore((s) => s.micEnabled);
   const localAudioLevel = useLumaStore((s) => s.localAudioLevel);
 
@@ -140,6 +149,8 @@ export default function RoomPage() {
   const updateChatMessage = useLumaStore((s) => s.updateChatMessage);
   const deleteChatMessage = useLumaStore((s) => s.deleteChatMessage);
   const clearChat = useLumaStore((s) => s.clearChat);
+  const setGames = useLumaStore((s) => s.setGames);
+  const setUnoHand = useLumaStore((s) => s.setUnoHand);
   const setLocalVoice = useLumaStore((s) => s.setLocalVoice);
   const setPeerDistances = useLumaStore((s) => s.setPeerDistances);
 
@@ -158,6 +169,10 @@ export default function RoomPage() {
   const [screenVolume, setScreenVolume] = useState<number>(0.85);
   const [interactiveScreen, setInteractiveScreen] = useState<boolean>(false);
   const [nearestSeat, setNearestSeat] = useState<SeatState | null>(null);
+  const [nearestGameId, setNearestGameId] = useState<BoardGameId | null>(null);
+  const [gamesModalOpen, setGamesModalOpen] = useState<boolean>(false);
+  const [activeGameTab, setActiveGameTab] = useState<BoardGameId>('uno');
+  const [theaterMode, setTheaterMode] = useState<boolean>(false);
   const [selectedRemote, setSelectedRemote] = useState<PlayerState | null>(null);
   const [hudVisible, setHudVisible] = useState<boolean>(true);
   const [copiedInvite, setCopiedInvite] = useState<boolean>(false);
@@ -480,6 +495,8 @@ export default function RoomPage() {
     socket.on('chat:updated', updateChatMessage);
     socket.on('chat:deleted', deleteChatMessage);
     socket.on('chat:cleared', clearChat);
+    socket.on('game:synced', setGames);
+    socket.on('game:uno_hand', setUnoHand);
     socket.on('room:notice', ({ message }) => showNotice(message));
     socket.on('mod:kicked', (reason) => {
       showNotice(reason);
@@ -573,11 +590,32 @@ export default function RoomPage() {
     };
   }, [video?.url, video?.youtubeId, video?.sourceType, video?.title]);
 
-  // 4DX Timeline + Biome Driver (drives YouTube timed cues, title biomes, & manual bursts)
+  // Auto-exit Normal Izle (theaterMode) if room enters 4D Mode
+  const isRoom4D = customization.experienceMode === '4d';
+  useEffect(() => {
+    if (isRoom4D && theaterMode) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setTheaterMode(false);
+    }
+    if (!isRoom4D) {
+      useFourDStore.getState().setCurrent(ZERO_4D_EFFECTS);
+    }
+  }, [isRoom4D, theaterMode]);
+
+  // 4DX Timeline + Biome Driver + Game Station Proximity
   useEffect(() => {
     const timer = window.setInterval(() => {
+      const nearestSt = findNearestGameStation(localPositionRef.current, customization.theme);
+      const nextGameId = nearestSt?.id ?? null;
+      setNearestGameId((prev) => (prev === nextGameId ? prev : nextGameId));
+
       const store = useFourDStore.getState();
-      if (!store.enabled) return;
+      if (customization.experienceMode !== '4d' || !store.enabled) {
+        store.setCurrent(ZERO_4D_EFFECTS);
+        return;
+      }
 
       if (store.manualOverride) {
         if (Date.now() < store.manualUntil) {
@@ -653,7 +691,7 @@ export default function RoomPage() {
     return () => {
       window.clearInterval(timer);
     };
-  }, [video, screenShareStream]);
+  }, [video, screenShareStream, customization.theme, customization.experienceMode]);
 
   // Live video timeline ticker
   useEffect(() => {
@@ -911,16 +949,17 @@ export default function RoomPage() {
           players={players}
           localPlayer={localPlayer}
           nearestSeat={nearestSeat}
+          nearestGameId={nearestGameId}
           video={video}
           cameraMode={cameraMode}
           cameraZoom={cameraZoom}
           screenVolume={screenVolume}
           interactiveScreen={interactiveScreen}
-          suspended={false}
+          suspended={theaterMode && !isRoom4D}
           screenShareStream={screenShareStream}
           isLocalScreenSharer={isLocalScreenSharer}
           canControlVideo={canControlVideo}
-          inputLocked={drawer !== 'none' || browserOpen}
+          inputLocked={drawer !== 'none' || browserOpen || gamesModalOpen || (theaterMode && !isRoom4D)}
           mobileInputRef={mobileInputRef}
           listenerTransformRef={listenerTransformRef}
           localPositionRef={localPositionRef}
@@ -930,6 +969,10 @@ export default function RoomPage() {
           onNearestSeatChange={setNearestSeat}
           onInteractSeat={handleInteractSeat}
           onClaimSeat={handleClaimSeat}
+          onOpenGameStation={(gid) => {
+            setActiveGameTab(gid);
+            setGamesModalOpen(true);
+          }}
           onSelectRemotePlayer={(p) => setSelectedRemote(p)}
           onPlayerSyncAction={emitVideoControl}
           onVideoEnded={() => socketRef.current?.emit('queue:next')}
@@ -1000,6 +1043,42 @@ export default function RoomPage() {
               </>
             )}
           </button>
+
+          {isPrivileged ? (
+            <button
+              type="button"
+              onClick={() =>
+                socketRef.current?.emit(
+                  'room:customize',
+                  { experienceMode: isRoom4D ? 'normal' : '4d' },
+                  (r) => {
+                    if (!r.ok && r.error) showNotice(r.error);
+                    else showNotice(isRoom4D ? 'Oda Normal Moda alındı.' : 'Oda 4D Sinema Moduna alındı!');
+                  },
+                )
+              }
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition ${
+                isRoom4D
+                  ? 'border-[#7C5CFF] bg-[#7C5CFF] text-white shadow-lg'
+                  : 'border-white/10 bg-[#0B0D14]/85 text-zinc-200 hover:border-white/25'
+              }`}
+              title="4D Sinema Modu / Normal Mod geçişi"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{isRoom4D ? '4D Mod' : 'Normal Mod'}</span>
+            </button>
+          ) : (
+            <span
+              className={`hidden items-center gap-1 rounded-xl border px-2.5 py-2 text-[11px] font-medium sm:inline-flex ${
+                isRoom4D
+                  ? 'border-[#7C5CFF]/40 bg-[#7C5CFF]/15 text-[#DDD6FE]'
+                  : 'border-white/10 bg-[#0B0D14]/85 text-zinc-400'
+              }`}
+            >
+              <Sparkles className="h-3 w-3" />
+              {isRoom4D ? '4D Mod' : 'Normal Mod'}
+            </span>
+          )}
 
           {isPrivileged && (
             <>
@@ -1072,6 +1151,29 @@ export default function RoomPage() {
             ) : (
               <span>{nearestSeat?.label} — Otur [E / F]</span>
             )}
+          </button>
+        </div>
+      )}
+
+      {/* Nearest Back-Room Game Table Prompt */}
+      {nearestGameId && !gamesModalOpen && !localPlayer?.seatedSeatId && (
+        <div className="fixed bottom-24 left-1/2 z-20 -translate-x-1/2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveGameTab(nearestGameId);
+              setGamesModalOpen(true);
+            }}
+            className="flex items-center gap-2 rounded-full border border-emerald-400/50 bg-[#10121A]/95 px-4 py-2 text-xs font-semibold text-white shadow-xl backdrop-blur-md transition hover:bg-emerald-500 hover:text-black"
+          >
+            <Gamepad2 className="h-4 w-4 text-emerald-400" />
+            <span>
+              {nearestGameId === 'chess'
+                ? 'Satranç Masasını Aç'
+                : nearestGameId === 'uno'
+                  ? 'UNO Masasını Aç'
+                  : 'Monopoly Masasını Aç'}
+            </span>
           </button>
         </div>
       )}
@@ -1403,6 +1505,18 @@ export default function RoomPage() {
                   <span>Perde Kontrolü</span>
                 </button>
               )}
+
+              {!isRoom4D && (
+                <button
+                  type="button"
+                  onClick={() => setTheaterMode(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
+                  title="Normal Modda tam ekran izle"
+                >
+                  <Tv className="h-3.5 w-3.5" />
+                  <span>Normal İzle</span>
+                </button>
+              )}
             </>
           ) : screenShareStream ? (
             <div className="flex items-center gap-2">
@@ -1410,6 +1524,16 @@ export default function RoomPage() {
                 <MonitorUp className="h-3.5 w-3.5" />
                 {screenShare.sharerName ? `${screenShare.sharerName} Yayında` : 'Sekme Yayını'}
               </span>
+              {!isRoom4D && (
+                <button
+                  type="button"
+                  onClick={() => setTheaterMode(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-[#3B82F6]/20 px-2.5 py-1.5 text-[11px] font-medium text-blue-200 ring-1 ring-blue-500/35 transition hover:bg-[#3B82F6]/30"
+                >
+                  <Tv className="h-3.5 w-3.5" />
+                  <span>Normal İzle</span>
+                </button>
+              )}
             </div>
           ) : (
             <span className="hidden text-xs text-zinc-500 sm:inline">
@@ -1441,6 +1565,16 @@ export default function RoomPage() {
               <span>Yayını Durdur</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setGamesModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-white/[0.06] px-2.5 py-2 text-xs font-medium text-zinc-200 hover:bg-white/10"
+            title="Arka Oyun Salonu: Satranç, UNO, Monopoly"
+          >
+            <Gamepad2 className="h-4 w-4 text-emerald-400" />
+            <span className="hidden lg:inline">Oyunlar</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setDrawer(drawer === 'media' ? 'none' : 'media')}
@@ -1487,8 +1621,74 @@ export default function RoomPage() {
         </div>
       </footer>
 
-      {/* 4DX Physical Screen Droplets, Heat, Lightning, & Control Pill */}
-      <FourDOverlay2D canTriggerEffects={Boolean(canControlVideo || isPrivileged)} />
+      {/* 4DX Physical Screen Droplets, Heat, Lightning, & Control Pill (4D Mode Only) */}
+      {isRoom4D && (
+        <FourDOverlay2D canTriggerEffects={Boolean(canControlVideo || isPrivileged)} />
+      )}
+
+      {/* Normal Mode Fullscreen Theater Overlay (Disabled in 4D Mode) */}
+      {!isRoom4D && theaterMode && (
+        <TheaterVideoOverlay
+          roomName={room?.name || roomMeta?.name || 'Luma'}
+          onlineCount={players.length}
+          video={video}
+          screenShareStream={screenShareStream}
+          screenShareName={screenShare.sharerName}
+          isLocalScreenSharer={isLocalScreenSharer}
+          displayTime={displayTime}
+          hasQueue={queue.length > 0}
+          screenVolume={screenVolume}
+          micEnabled={micEnabled}
+          localAudioLevel={localAudioLevel}
+          canControlVideo={canControlVideo}
+          onChangeVolume={setScreenVolume}
+          onStopScreenShare={handleToggleScreenShare}
+          onTogglePlay={() =>
+            emitVideoControl({
+              action: video?.isPlaying ? 'pause' : 'play',
+            })
+          }
+          onSeek={(targetSec) =>
+            emitVideoControl({
+              action: 'seek',
+              currentTime: targetSec,
+            })
+          }
+          onChangeRate={(rate) =>
+            emitVideoControl({
+              action: 'rate',
+              playbackRate: rate,
+            })
+          }
+          onPlayerSyncAction={emitVideoControl}
+          onNextQueue={() => socketRef.current?.emit('queue:next')}
+          onVideoEnded={() => socketRef.current?.emit('queue:next')}
+          onToggleMic={handleToggleMic}
+          onOpenMedia={() => setDrawer(drawer === 'media' ? 'none' : 'media')}
+          onOpenSocial={() => setDrawer(drawer === 'social' ? 'none' : 'social')}
+          onExitTheater={() => {
+            if (document.fullscreenElement) {
+              document.exitFullscreen().catch(() => {});
+            }
+            setTheaterMode(false);
+          }}
+        />
+      )}
+
+      {/* Back Game Lounge Modal (Chess, UNO, Monopoly) */}
+      <BoardGamesModal
+        open={gamesModalOpen}
+        initialGame={activeGameTab}
+        games={games}
+        unoHand={unoHand}
+        localPlayerId={localPlayerId}
+        onClose={() => setGamesModalOpen(false)}
+        onAction={(payload) =>
+          socketRef.current?.emit('game:action', payload, (r) => {
+            if (!r.ok && r.error) showNotice(r.error);
+          })
+        }
+      />
 
       {/* In-App Web Browser Overlay (No Screen Share Needed) */}
       <WebBrowserModal
