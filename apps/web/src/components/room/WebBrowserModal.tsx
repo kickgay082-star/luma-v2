@@ -261,7 +261,7 @@ export function WebBrowserModal({
                   <div className="flex items-center gap-2">
                     <Puzzle className="h-5 w-5 text-[#A78BFA]" />
                     <h3 className="text-sm font-semibold text-white">
-                      Luma Video Köprüsü Eklentisi (Chrome / Edge / Opera)
+                      Luma Video Köprüsü Eklentisi v1.1 (Kaçak Siteler Dahil %100 Çözüm)
                     </h3>
                     {extInstalled && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
@@ -270,7 +270,7 @@ export function WebBrowserModal({
                     )}
                   </div>
                   <p className="text-xs leading-relaxed text-zinc-300">
-                    Bazı siteler güvenlik koruması nedeniyle site içi tarayıcıya bağlanmayı reddeder. Luma Eklentisini bir kere kurduğunda, kendi normal tarayıcı sekmesinde açtığın film/dizi/X videosunu ekran paylaşmadan tek tıkla 3D sinema perdesine gönderir.
+                    Render/Vercel sunucularını hiç kullanmadan videoyu doğrudan kendi tarayıcından odaya aktarır; Cloudflare, Referer ve IP kilidine takılmaz, ekran paylaşım penceresi açmaz. Eklentiyi güncellemek veya kurmak için ZIP&apos;i indir.
                   </p>
                 </div>
 
@@ -280,7 +280,7 @@ export function WebBrowserModal({
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#7C5CFF] px-4 py-2.5 text-xs font-semibold text-white shadow-lg transition hover:bg-[#6D4AF5]"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Eklentiyi İndir (.zip)</span>
+                  <span>Eklentiyi İndir (v1.1 .zip)</span>
                 </a>
               </div>
 
@@ -288,19 +288,19 @@ export function WebBrowserModal({
                 <div className="rounded-xl border border-white/[0.07] bg-black/30 p-2.5">
                   <span className="font-semibold text-white">1. ZIP&apos;i Klasöre Çıkar</span>
                   <p className="mt-0.5 text-zinc-400">
-                    İndirdiğin ZIP dosyasına sağ tıklayıp &quot;Tümünü Ayıkla&quot; de.
+                    İndirdiğin ZIP dosyasına sağ tıklayıp &quot;Tümünü Ayıkla&quot; de (eski sürüm varsa üzerine yaz veya yenile).
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.07] bg-black/30 p-2.5">
                   <span className="font-semibold text-white">2. Tarayıcıya Yükle</span>
                   <p className="mt-0.5 text-zinc-400">
-                    <span className="font-mono text-zinc-200">chrome://extensions</span> aç → sağ üstten <b>Geliştirici Modu</b>&apos;nu aç → <b>Paketlenmemiş öğe yükle</b> ile klasörü seç.
+                    <span className="font-mono text-zinc-200">chrome://extensions</span> aç → <b>Geliştirici Modu</b> açık olsun → <b>Paketlenmemiş öğe yükle</b> (veya yenile ↻).
                   </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.07] bg-black/30 p-2.5">
-                  <span className="font-semibold text-white">3. Tek Tıkla İzlet</span>
+                  <span className="font-semibold text-white">3. Canlı Odaya Aktar</span>
                   <p className="mt-0.5 text-zinc-400">
-                    Herhangi bir sitede videoyu başlat, sağ üstten <b>Luma Video Köprüsü</b> eklentisine basıp <b>Perdeye Gönder</b>&apos;e tıkla!
+                    Film/dizi sekmesinde videoyu aç, eklenti simgesinden <b>&quot;Bu Sekmedeki Videoyu Canlı Odaya Aktar&quot;</b> butonuna bas!
                   </p>
                 </div>
               </div>

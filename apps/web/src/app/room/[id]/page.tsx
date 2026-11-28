@@ -249,12 +249,44 @@ export default function RoomPage() {
     voiceEngineRef.current?.setRelayMode(voiceRelayMode);
   }, [voiceRelayMode]);
 
-  // Receive videos sent directly from the downloadable Luma Browser Extension
+  useEffect(() => {
+    screenShareEngineRef.current?.setLocalMonitorVolume(screenVolume);
+  }, [screenVolume]);
+
+  // Receive direct URLs or silent tabCapture streamIds from the Luma Browser Extension
   useEffect(() => {
     const onExtMsg = (ev: MessageEvent) => {
       if (ev.origin !== window.location.origin) return;
       const d = ev.data;
       if (!d || typeof d !== 'object') return;
+      if (d.type === 'LUMA_EXTENSION_TAB_STREAM' && typeof d.streamId === 'string') {
+        const engine = screenShareEngineRef.current;
+        const sock = socketRef.current;
+        if (!engine || !sock) return;
+        const title =
+          typeof d.title === 'string' && d.title ? d.title : 'Canlı Video Sekmesi';
+        const viewerIds = Object.keys(useLumaStore.getState().players);
+        sock.emit('screenshare:start', async (res) => {
+          if (!res?.ok) {
+            showNotice(res?.error || 'Canlı video yayını başlatılamadı.');
+            return;
+          }
+          const stream = await engine.startFromExtensionStreamId(
+            d.streamId,
+            viewerIds,
+            screenVolume,
+          );
+          if (!stream) {
+            sock.emit('screenshare:stop');
+            showNotice('Eklenti video akışı başlatılamadı.');
+            return;
+          }
+          setScreenShareStream(stream);
+          showNotice(`Eklentiden canlı yayın başlatıldı: ${title}`);
+        });
+        setBrowserOpen(false);
+        return;
+      }
       if (d.type === 'LUMA_EXTENSION_VIDEO' && typeof d.url === 'string') {
         const title =
           typeof d.title === 'string' && d.title ? d.title : 'Eklentiden Gelen Video';
@@ -278,7 +310,7 @@ export default function RoomPage() {
     };
     window.addEventListener('message', onExtMsg);
     return () => window.removeEventListener('message', onExtMsg);
-  }, [showNotice]);
+  }, [showNotice, screenVolume]);
 
   // ESC closes open overlays
   useEffect(() => {

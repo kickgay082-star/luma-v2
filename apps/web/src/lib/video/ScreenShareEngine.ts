@@ -22,6 +22,8 @@ export class ScreenShareEngine {
   private socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   private localPlayerId: string;
   private localStream: MediaStream | null = null;
+  private monitorAudioCtx: AudioContext | null = null;
+  private monitorGain: GainNode | null = null;
   private outgoingPeers = new Map<string, ViewerBundle>();
   private incomingPc: RTCPeerConnection | null = null;
   private incomingSharerId: string | null = null;
@@ -70,6 +72,74 @@ export class ScreenShareEngine {
       return stream;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Starts capturing a background browser tab via an extension tabCapture streamId
+   * without triggering an OS screen-picker dialog or touching Render/Vercel proxy IPs.
+   */
+  async startFromExtensionStreamId(
+    streamId: string,
+    remotePlayerIds: string[],
+    monitorVolume = 0.85,
+  ): Promise<MediaStream | null> {
+    try {
+      const constraints = {
+        audio: {
+          mandatory: {
+            chromeMediaSource: 'tab',
+            chromeMediaSourceId: streamId,
+          },
+        },
+        video: {
+          mandatory: {
+            chromeMediaSource: 'tab',
+            chromeMediaSourceId: streamId,
+            maxWidth: 1920,
+            maxHeight: 1080,
+            maxFrameRate: 30,
+          },
+        },
+      } as unknown as MediaStreamConstraints;
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.stopSharingInternal(false);
+      this.localStream = stream;
+
+      // Chrome mutes a captured tab locally; pipe audio back cleanly for the host
+      if (stream.getAudioTracks().length > 0 && typeof AudioContext !== 'undefined') {
+        const ctx = new AudioContext();
+        const source = ctx.createMediaStreamSource(stream);
+        const gain = ctx.createGain();
+        gain.gain.value = Math.max(0, Math.min(1, monitorVolume));
+        source.connect(gain);
+        gain.connect(ctx.destination);
+        this.monitorAudioCtx = ctx;
+        this.monitorGain = gain;
+      }
+
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          this.stopSharing();
+        };
+      }
+
+      this.syncViewers(remotePlayerIds);
+      return stream;
+    } catch {
+      return null;
+    }
+  }
+
+  setLocalMonitorVolume(volume: number): void {
+    if (this.monitorGain && this.monitorAudioCtx) {
+      this.monitorGain.gain.setTargetAtTime(
+        Math.max(0, Math.min(1, volume)),
+        this.monitorAudioCtx.currentTime,
+        0.04,
+      );
     }
   }
 
@@ -218,6 +288,11 @@ export class ScreenShareEngine {
   }
 
   private stopSharingInternal(emitStop: boolean): void {
+    if (this.monitorAudioCtx) {
+      this.monitorAudioCtx.close().catch(() => {});
+      this.monitorAudioCtx = null;
+      this.monitorGain = null;
+    }
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;

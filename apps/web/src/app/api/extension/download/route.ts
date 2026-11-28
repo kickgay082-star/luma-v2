@@ -35,29 +35,27 @@ function buildZip(entries: ZipEntry[]): Buffer {
     const data = entry.content;
     const crc = crc32(data);
 
-    // Local file header (30 bytes + filename)
     const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0); // signature
-    localHeader.writeUInt16LE(20, 4); // version needed
-    localHeader.writeUInt16LE(0x0800, 6); // UTF-8 flag
-    localHeader.writeUInt16LE(0, 8); // compression: store (0)
-    localHeader.writeUInt16LE(0, 10); // mod time
-    localHeader.writeUInt16LE(0x5421, 12); // mod date
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x0800, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0x5421, 12);
     localHeader.writeUInt32LE(crc, 14);
     localHeader.writeUInt32LE(data.length, 18);
     localHeader.writeUInt32LE(data.length, 22);
     localHeader.writeUInt16LE(nameBuf.length, 26);
-    localHeader.writeUInt16LE(0, 28); // extra len
+    localHeader.writeUInt16LE(0, 28);
 
     localParts.push(localHeader, nameBuf, data);
 
-    // Central directory header (46 bytes + filename)
     const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0); // signature
-    centralHeader.writeUInt16LE(20, 4); // version made by
-    centralHeader.writeUInt16LE(20, 6); // version needed
-    centralHeader.writeUInt16LE(0x0800, 8); // UTF-8 flag
-    centralHeader.writeUInt16LE(0, 10); // compression: store
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(0, 10);
     centralHeader.writeUInt16LE(0, 12);
     centralHeader.writeUInt16LE(0x5421, 14);
     centralHeader.writeUInt32LE(crc, 16);
@@ -93,10 +91,18 @@ const MANIFEST_JSON = JSON.stringify(
   {
     manifest_version: 3,
     name: 'Luma Video Köprüsü',
-    version: '1.0.0',
+    version: '1.1.0',
     description:
-      'Herhangi bir film, dizi veya sosyal medya sitesindeki videoyu yakalayıp tek tıkla Luma 3D sinema odana yansıtır.',
-    permissions: ['webRequest', 'tabs', 'activeTab', 'scripting', 'storage'],
+      'İzlediğin film, dizi veya sosyal medya sekmesindeki videoyu Cloudflare/Render engeline takılmadan doğrudan Luma 3D perdesine aktarır.',
+    permissions: [
+      'webRequest',
+      'tabCapture',
+      'declarativeNetRequest',
+      'tabs',
+      'activeTab',
+      'scripting',
+      'storage',
+    ],
     host_permissions: ['<all_urls>'],
     background: {
       service_worker: 'background.js',
@@ -130,6 +136,43 @@ const MANIFEST_JSON = JSON.stringify(
 
 const BACKGROUND_JS = `
 const TAB_KEY_PREFIX = 'luma_vids_';
+const LUMA_RULE_ID = 7701;
+
+// Scoped header unblocking ONLY when initiated by Luma web tabs so embeds/HLS work cleanly
+async function installLumaHeaderRules() {
+  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateDynamicRules) return;
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: [LUMA_RULE_ID],
+      addRules: [
+        {
+          id: LUMA_RULE_ID,
+          priority: 1,
+          action: {
+            type: 'modifyHeaders',
+            responseHeaders: [
+              { header: 'x-frame-options', operation: 'remove' },
+              { header: 'content-security-policy', operation: 'remove' },
+              { header: 'access-control-allow-origin', operation: 'set', value: '*' },
+            ],
+          },
+          condition: {
+            initiatorDomains: ['luma-v2-lemon.vercel.app', 'localhost', '127.0.0.1'],
+            resourceTypes: ['sub_frame', 'xmlhttprequest', 'media', 'other'],
+          },
+        },
+      ],
+    });
+  } catch {}
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  installLumaHeaderRules();
+});
+chrome.runtime.onStartup.addListener(() => {
+  installLumaHeaderRules();
+});
+installLumaHeaderRules();
 
 function classifyUrl(rawUrl, contentType) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -137,7 +180,6 @@ function classifyUrl(rawUrl, contentType) {
   const lower = rawUrl.toLowerCase();
   const ct = (contentType || '').toLowerCase();
 
-  // Ignore tracking pixels, tiny segments (.ts / .m4s), images
   if (/\\.(ts|m4s|key|vtt|srt|png|jpg|jpeg|webp|gif|css|woff2?)(\\?|$)/i.test(lower)) {
     return null;
   }
@@ -236,6 +278,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 });
 
+async function findLumaRoomTabs() {
+  const tabs = await chrome.tabs.query({});
+  return tabs.filter(
+    (t) =>
+      t.url &&
+      /\\/room\\//i.test(t.url) &&
+      (t.url.includes('luma-v2') || t.url.includes('localhost') || t.url.includes('127.0.0.1'))
+  );
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== 'object') return;
 
@@ -258,27 +310,62 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'FIND_LUMA_TABS') {
-    chrome.tabs.query({}).then((tabs) => {
-      const lumaTabs = tabs.filter(
-        (t) =>
-          t.url &&
-          /\\/room\\//i.test(t.url) &&
-          (t.url.includes('luma-v2') || t.url.includes('localhost') || t.url.includes('127.0.0.1'))
-      );
+    findLumaRoomTabs().then((lumaTabs) => {
       sendResponse({ tabs: lumaTabs.map((t) => ({ id: t.id, title: t.title, url: t.url })) });
     });
     return true;
   }
 
+  if (msg.type === 'CAPTURE_TAB_TO_LUMA') {
+    (async () => {
+      const lumaTabs = await findLumaRoomTabs();
+      if (lumaTabs.length === 0) {
+        sendResponse({ ok: false, error: 'Önce açık bir Luma sinema odasına girin.' });
+        return;
+      }
+      const lumaTab = lumaTabs[0];
+      if (msg.tabId === lumaTab.id) {
+        sendResponse({ ok: false, error: 'Önce filmin açık olduğu site sekmesine geçip tıklayın.' });
+        return;
+      }
+
+      chrome.tabCapture.getMediaStreamId(
+        { targetTabId: msg.tabId, consumerTabId: lumaTab.id },
+        async (streamId) => {
+          if (chrome.runtime.lastError || !streamId) {
+            sendResponse({
+              ok: false,
+              error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'Sekme video aktarımı başlatılamadı.',
+            });
+            return;
+          }
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: lumaTab.id },
+              func: (p) => {
+                window.postMessage(p, window.location.origin);
+              },
+              args: [
+                {
+                  type: 'LUMA_EXTENSION_TAB_STREAM',
+                  streamId,
+                  title: msg.title || 'Canlı Video Sekmesi',
+                },
+              ],
+            });
+            sendResponse({ ok: true });
+          } catch (e) {
+            sendResponse({ ok: false, error: String(e) });
+          }
+        }
+      );
+    })();
+    return true;
+  }
+
   if (msg.type === 'SEND_TO_LUMA') {
     (async () => {
-      const tabs = await chrome.tabs.query({});
-      const lumaTabs = tabs.filter(
-        (t) =>
-          t.url &&
-          /\\/room\\//i.test(t.url) &&
-          (t.url.includes('luma-v2') || t.url.includes('localhost') || t.url.includes('127.0.0.1'))
-      );
+      const lumaTabs = await findLumaRoomTabs();
       if (lumaTabs.length === 0) {
         sendResponse({ ok: false, error: 'Açık bir Luma odası sekmesi bulunamadı.' });
         return;
@@ -312,7 +399,7 @@ const CONTENT_LUMA_JS = `
 (function() {
   try {
     document.documentElement.dataset.lumaExt = '1';
-    window.postMessage({ type: 'LUMA_EXTENSION_READY', version: '1.0.0' }, window.location.origin);
+    window.postMessage({ type: 'LUMA_EXTENSION_READY', version: '1.1.0' }, window.location.origin);
   } catch {}
 })();
 `;
@@ -377,33 +464,43 @@ const POPUP_HTML = `<!doctype html>
   <title>Luma Video Köprüsü</title>
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    body { margin: 0; width: 360px; background: #090A0F; color: #F4F4F5; padding: 14px; }
+    body { margin: 0; width: 370px; background: #090A0F; color: #F4F4F5; padding: 14px; }
     .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .logo { font-weight: 700; font-size: 14px; color: #fff; }
     .badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #1E1B2E; color: #C4B5FD; border: 1px solid #7C5CFF55; }
     .status { font-size: 11px; padding: 8px 10px; border-radius: 10px; margin-bottom: 10px; background: #12141E; border: 1px solid #ffffff15; color: #A1A1AA; }
     .status.ok { border-color: #10B98155; color: #6EE7B7; }
-    .list { display: flex; flex-direction: column; gap: 8px; max-height: 290px; overflow-y: auto; }
-    .card { background: #11131D; border: 1px solid #ffffff18; border-radius: 10px; padding: 9px; }
-    .title { font-size: 12px; font-weight: 600; color: #fff; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .url { font-size: 10px; color: #71717A; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 7px; }
+    .hero { width: 100%; border: 0; border-radius: 11px; padding: 11px 12px; font-size: 12px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #7C5CFF, #3B82F6); color: #fff; margin-bottom: 6px; box-shadow: 0 6px 20px rgba(124, 92, 255, 0.35); }
+    .hero:hover { filter: brightness(1.08); }
+    .hint { font-size: 10.5px; color: #A1A1AA; line-height: 1.4; margin-bottom: 12px; }
+    .secTitle { font-size: 11px; font-weight: 600; color: #D4D4D8; margin: 8px 0 6px; }
+    .list { display: flex; flex-direction: column; gap: 7px; max-height: 220px; overflow-y: auto; }
+    .card { background: #11131D; border: 1px solid #ffffff18; border-radius: 10px; padding: 8px; }
+    .title { font-size: 11.5px; font-weight: 600; color: #fff; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .url { font-size: 10px; color: #71717A; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
     .kind { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: #ffffff12; color: #E4E4E7; font-family: monospace; }
-    button { border: 0; border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 600; cursor: pointer; background: #7C5CFF; color: #fff; }
-    button:hover { background: #6D4AF5; }
-    .sec { width: 100%; margin-top: 10px; background: #1D4ED8; }
-    .sec:hover { background: #1E40AF; }
-    .empty { text-align: center; padding: 20px 10px; font-size: 12px; color: #71717A; }
+    .btn { border: 0; border-radius: 7px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer; background: #27272A; color: #fff; }
+    .btn:hover { background: #7C5CFF; }
+    .empty { text-align: center; padding: 14px 8px; font-size: 11px; color: #71717A; background: #10121A; border-radius: 10px; }
   </style>
 </head>
 <body>
   <div class="hdr">
-    <span class="logo">Luma Video Köprüsü</span>
-    <span class="badge" id="countBadge">0 video</span>
+    <span class="logo">Luma Video Köprüsü v1.1</span>
+    <span class="badge" id="countBadge">0 link</span>
   </div>
   <div id="roomStatus" class="status">Açık Luma odası aranıyor...</div>
+
+  <button id="captureTabBtn" class="hero" type="button">
+    Bu Sekmedeki Videoyu Canlı Odaya Aktar (%100 Çalışır)
+  </button>
+  <div class="hint">
+    Cloudflare / kaçak site / IP kilidi tanımaz, ekran seçme penceresi açmaz. Videoyu bu sekmede oynatıp tıkla, ses + görüntü direkt Luma 3D perdeye gider.
+  </div>
+
+  <div class="secTitle">Veya Doğrudan Akış Linki Gönder (HLS / MP4)</div>
   <div id="videoList" class="list"></div>
-  <button id="sendPageBtn" class="sec" type="button">Bu Sayfayı Doğrudan Perdeye Ver (Embed)</button>
   <script src="popup.js"></script>
 </body>
 </html>`;
@@ -413,7 +510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusEl = document.getElementById('roomStatus');
   const listEl = document.getElementById('videoList');
   const countEl = document.getElementById('countBadge');
-  const sendPageBtn = document.getElementById('sendPageBtn');
+  const captureTabBtn = document.getElementById('captureTabBtn');
 
   const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -427,11 +524,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  captureTabBtn.onclick = () => {
+    if (!activeTab || !activeTab.id) return;
+    statusEl.className = 'status';
+    statusEl.textContent = 'Canlı video akışı Luma odasına bağlanıyor...';
+    chrome.runtime.sendMessage(
+      { type: 'CAPTURE_TAB_TO_LUMA', tabId: activeTab.id, title: activeTab.title },
+      (res) => {
+        if (res && res.ok) {
+          statusEl.className = 'status ok';
+          statusEl.textContent = 'Canlı yayın Luma 3D perdesinde başladı ✓';
+        } else {
+          statusEl.textContent = (res && res.error) || 'Aktarım başlatılamadı.';
+        }
+      }
+    );
+  };
+
   function sendVideo(item) {
     chrome.runtime.sendMessage({ type: 'SEND_TO_LUMA', ...item }, (res) => {
       if (res && res.ok) {
         statusEl.className = 'status ok';
-        statusEl.textContent = 'Luma 3D perdeye gönderildi ✓';
+        statusEl.textContent = 'Akış Luma 3D perdeye gönderildi ✓';
       } else {
         statusEl.textContent = (res && res.error) || 'Gönderilemedi.';
       }
@@ -441,10 +555,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (activeTab && activeTab.id) {
     chrome.runtime.sendMessage({ type: 'GET_TAB_VIDEOS', tabId: activeTab.id }, (res) => {
       const videos = (res && res.videos) || [];
-      countEl.textContent = videos.length + ' video';
+      countEl.textContent = videos.length + ' link';
       if (videos.length === 0) {
         listEl.innerHTML =
-          '<div class="empty">Bu sekmede henüz video yakalanmadı.<br/>Sitede videoyu oynat tuşuna basın.</div>';
+          '<div class="empty">Henüz ham .m3u8/.mp4 linki yakalanmadı.<br/>Yukarıdaki mavi/mor butonu kullanabilirsin.</div>';
         return;
       }
       listEl.innerHTML = '';
@@ -463,8 +577,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         k.className = 'kind';
         k.textContent = String(v.sourceType || 'mp4').toUpperCase();
         const btn = document.createElement('button');
+        btn.className = 'btn';
         btn.type = 'button';
-        btn.textContent = 'Perdeye Gönder';
+        btn.textContent = 'Linki Gönder';
         btn.onclick = () => sendVideo(v);
         row.appendChild(k);
         row.appendChild(btn);
@@ -474,15 +589,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         listEl.appendChild(card);
       });
     });
-
-    sendPageBtn.onclick = () => {
-      if (!activeTab.url) return;
-      sendVideo({
-        url: activeTab.url,
-        sourceType: 'embed',
-        title: activeTab.title || 'Web Sayfası',
-      });
-    };
   }
 });
 `;
