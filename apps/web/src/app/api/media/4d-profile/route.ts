@@ -4,7 +4,7 @@ import {
   FourDEffects,
   FourDTimelineCue,
   matchFourDEffectsFromText,
-} from '@/stores/useFourDStore';
+} from '@/lib/media/fourDEffects';
 
 function decodeXml(str: string): string {
   return str
